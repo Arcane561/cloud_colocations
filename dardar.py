@@ -108,6 +108,16 @@ def get_file_by_date(product, date):
 class ICAREFile(CachedFile):
 
     def __init__(self, product, date):
+        if type(date) is str:
+            try:
+                date = datetime.strptime(date, "%Y%j%H%M")
+            except:
+                raise Exception(date + " is not a compatible with date fomat " +
+                                "%Y%j%H%M.")
+        elif type(date) is not datetime:
+            date = datetime(date)
+
+        self.date = date
         self.product     = product
         self.name = get_file_by_date(product, date)
         super().__init__(product, self.name)
@@ -126,6 +136,8 @@ class ICAREFile(CachedFile):
     def get_lons(self):
         return np.asarray(self.file_handle.select('CLOUDSAT_Longitude')[:])
 
+    def get_cloud_types(self):
+        return np.max(np.asarray(self.file_handle.select('CLOUDSAT_Cloud_Scenario')[:, :]), axis = 1)
 
     def plot_footprint(self, ax = None):
         if ax is None:

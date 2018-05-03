@@ -1,14 +1,17 @@
 from bs4 import BeautifulSoup
 import json
 from urllib.request import urlopen, urlretrieve
-from cache import CachedFile
+from cache import get_cached_files, CachedFile
 from datetime import datetime
 import numpy as np
 from pyhdf.SD import SD, SDC
 import os
+from data_providers import LAADS, ICARE
 
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
+
+data_provider = ICARE
 
 laads_base_url = "http://ladsweb.modaps.eosdis.nasa.gov/archive/allData/6/"
 
@@ -43,6 +46,9 @@ def filename_to_datetime(filename):
     date = parts[1][1:]
     time = parts[2]
     return datetime.strptime(date + time, "%Y%j%H%M")
+
+data_provider.filename_to_datetime = lambda x,y: filename_to_datetime(y)
+data_provider.separator = "."
 
 def filename_to_product(filename):
     parts = filename.split(".")
@@ -81,7 +87,15 @@ def get_file_by_date(product, date):
     else:
         date = datetime(date)
 
-    dates_available = get_files(product, date.year, date.timetuple().tm_yday)
+    cached_files = get_cached_files(product, product + "*.hdf")
+    cached_dates = [filename_to_datetime(f) for f in cached_files]
+    dt_seconds = np.array([(date - cd).seconds for cd in cached_dates])
+    dt_days    = np.array([(date - cd).days for cd in cached_dates])
+    inds = [i for i,(s, d) in enumerate(zip(dt_seconds, dt_days)) if s == 0 and d == 0]
+    if len(inds) > 0:
+        return cached_files[inds[0]]
+
+    dates_available = data_provider().get_files(product, date.year, date.timetuple().tm_yday)
     dt = [date - filename_to_datetime(d)  for d in dates_available]
     dt_days    = np.array([t.days for t in dt])
     dt_seconds = np.array([t.seconds for t in dt])
@@ -111,7 +125,6 @@ def get_file(filename, dest):
 
     day_str = str(date.timetuple().tm_yday)
     day_str = "0" * (3 - len(day_str)) + day_str
-    print(day_str)
 
     url = os.path.join(laads_base_url, product, str(date.year), day_str, filename)
     url_base, url_ext = os.path.splitext(url)
@@ -137,7 +150,7 @@ class LAADSFile(CachedFile):
 
     def get_file(self, dest):
         print("Downloading file: " + self.name)
-        get_file(self.name, dest)
+        data_provider().get_file(self.name, dest)
         self.file = dest
 
 class ModisFile:
@@ -153,8 +166,9 @@ class ModisFile:
         self.geo_product = filename_to_product(geo_filename)
 
         self.file = LAADSFile(filename, subfolder = self.product)
-        self.geo_file = LAADSFile(geo_filename, subfolder = self.product)
+        self.geo_file = LAADSFile(geo_filename, subfolder = self.geo_product)
 
+        print("opening ", self.file.file)
         self.file_handle = SD(self.file.file, SDC.READ)
         self.geo_file_handle = SD(self.geo_file.file, SDC.READ)
 
@@ -167,24 +181,58 @@ class ModisFile:
     def get_lons(self):
         return np.asarray(self.geo_file_handle.select('Longitude')[:, :])
 
-    def get_radiances(self, channel = 0):
-        data = self.raw_data[channel, :, :].astype(np.double)
+    def get_radiances(self, band = 1):
 
-        valid_range = self.attributes["valid_range"]
-        valid_min = valid_range[0][0]
-        valid_max = valid_range[0][1]
-        fill_value = self.attributes["_FillValue"]
+        band_offset = 0
+        if band in range(1, 3):
+            ds_name = "EV_250_Aggr1km_RefSB"
+            band_offset = 1
+        elif band in range(3, 8):
+            ds_name = "EV_500_Aggr1km_RefSB"
+            band_offset = 3
+        elif band in range(8, 20):
+            ds_name = "EV_1KM_RefSB"
+            band_offset = 8
+        elif band in range(20, 26) or band in range(27, 37):
+            ds_name = "EV_1KM_Emissive"
+            band_offset = 20
+            if band > 26:
+                band_offset += 1
+        elif band == 26:
+            ds_name = "EV_Band26"
+
+
+        print(ds_name)
+        raw_data = self.file_handle.select(ds_name)
+        if band_offset > 0:
+            data = self.raw_data[band_offset, :, :].astype(np.double)
+        else:
+            data = self.raw_data[:, :].astype(np.double)
+
+        attributes  = raw_data.attributes(full = 1)
+        valid_range = attributes["valid_range"]
+        offsets     = attributes["radiance_offsets"]
+        scales      = attributes["radiance_scales"]
+
+
+        if band_offset > 0:
+            valid_min = valid_range[band - band_offset][0]
+            valid_max = valid_range[band - band_offset][1]
+            offset = offsets[band - band_offset][0]
+            scale_factor = scales[band - band_offset][0]
+        else:
+            valid_min = valid_range[0][0]
+            valid_max = valid_range[0][1]
+            offset = offsets[0]
+            scale_factor = scales[0]
+
+        fill_value = attributes["_FillValue"]
 
         invalid = np.logical_or(data > valid_max,
                                 data < valid_min)
         invalid = np.logical_or(invalid, data == fill_value)
         data[invalid] = np.nan
 
-        offsets = self.attributes["radiance_offsets"]
-        offset = offsets[0][0]
-
-        scales = self.attributes["radiance_scales"]
-        scale_factor = scales[0][0]
 
         data = (data - offset) * scale_factor
 
