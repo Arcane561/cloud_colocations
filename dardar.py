@@ -139,6 +139,53 @@ class ICAREFile(CachedFile):
     def get_cloud_types(self):
         return np.max(np.asarray(self.file_handle.select('CLOUDSAT_Cloud_Scenario')[:, :]), axis = 1)
 
+    def get_cloud_scenario(self):
+        return np.asarray(self.file_handle.select('CLOUDSAT_Cloud_Scenario')[:, :])
+
+    def get_cloud_height(self, start = 0, end = -1):
+
+        i = (start + end) // 2
+        if end > 0:
+            cloud_scenario = np.asarray(self.file_handle.select('CALIOP_Mask_Refined')[:, :])[i, :]
+        else:
+            cloud_scenario = np.asarray(self.file_handle.select('CALIOP_Mask_Refined')[i, :])
+
+
+        inds = np.where(cloud_scenario == 2)[0]
+        print(inds)
+        if len(inds) > 1:
+            z = np.asarray(self.file_handle.select('CS_TRACK_Height')[:])
+            return z[inds[0]]
+        else:
+            return - 9999.0
+
+    def get_subsampled_cloud_scenario(self, start = 0, end = -1, subsampling = 20):
+
+        if end > 0:
+            cloud_scenario = np.asarray(self.file_handle.select('CLOUDSAT_Cloud_Scenario')[:, :])[start:end, :]
+        else:
+            cloud_scenario = np.asarray(self.file_handle.select('CLOUDSAT_Cloud_Scenario'))[start :, :]
+
+        n = cloud_scenario.shape[0]
+        n_bins = cloud_scenario.shape[1]  // subsampling
+        if cloud_scenario.shape[1] % subsampling > 0:
+            n_bins += 1
+
+        cloud_scenario_simple = np.zeros((n, n_bins))
+
+        bins = np.arange(0, 11) - 0.5
+        for i in range(n):
+            si = 0
+            for j in range(n_bins):
+                if j < n_bins - 1:
+                    hs, _ = np.histogram(cloud_scenario[i, si:si + subsampling], bins = bins)
+                else:
+                    hs, _ = np.histogram(cloud_scenario[i, si:], bins = bins)
+                cloud_scenario_simple[i, j] = np.argmax(hs)
+                si += subsampling
+
+        return cloud_scenario_simple
+
     def plot_footprint(self, ax = None):
         if ax is None:
             ax = plt.gca()

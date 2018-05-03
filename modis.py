@@ -181,6 +181,30 @@ class ModisFile:
     def get_lons(self):
         return np.asarray(self.geo_file_handle.select('Longitude')[:, :])
 
+    def get_solar_zenith(self):
+        return np.asarray(self.geo_file_handle.select('SolarZenith')[:, :])
+
+    def get_solar_azimuth(self):
+        return np.asarray(self.geo_file_handle.select('SolarAzimuth')[:, :])
+
+    def get_solar_zenith(self, start = 0, end = -1):
+
+        return np.asarray(self.geo_file_handle.select('SolarZenith'))
+        i = (start + end) // 2
+        if end > 0:
+            cloud_scenario = np.asarray(self.file_handle.select('CALIOP_Mask_Refined')[:, :])[i, :]
+        else:
+            cloud_scenario = np.asarray(self.file_handle.select('CALIOP_Mask_Refined')[i, :])
+
+
+        inds = np.where(cloud_scenario == 2)[0]
+        print(inds)
+        if len(inds) > 1:
+            z = np.asarray(self.file_handle.select('CS_TRACK_Height')[:])
+            return z[inds[0]]
+        else:
+            return - 9999.0
+
     def get_radiances(self, band = 1):
 
         band_offset = 0
@@ -202,12 +226,11 @@ class ModisFile:
             ds_name = "EV_Band26"
 
 
-        print(ds_name)
         raw_data = self.file_handle.select(ds_name)
         if band_offset > 0:
-            data = self.raw_data[band_offset, :, :].astype(np.double)
+            data = self.raw_data[band - band_offset, :, :].astype(np.double)
         else:
-            data = self.raw_data[:, :].astype(np.double)
+            data = self.raw_data[0, :, :].astype(np.double)
 
         attributes  = raw_data.attributes(full = 1)
         valid_range = attributes["valid_range"]
@@ -216,10 +239,10 @@ class ModisFile:
 
 
         if band_offset > 0:
-            valid_min = valid_range[band - band_offset][0]
-            valid_max = valid_range[band - band_offset][1]
-            offset = offsets[band - band_offset][0]
-            scale_factor = scales[band - band_offset][0]
+            valid_min = valid_range[0][0]
+            valid_max = valid_range[0][1]
+            offset = offsets[0][0]
+            scale_factor = scales[0][0]
         else:
             valid_min = valid_range[0][0]
             valid_max = valid_range[0][1]
