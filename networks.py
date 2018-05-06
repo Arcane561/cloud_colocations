@@ -2,7 +2,7 @@ import numpy as np
 import keras
 from keras.models import Sequential, clone_model
 from keras.layers import Dense, Activation, Dropout
-from keras.optimizers import SGD
+from keras.optimizers import SGD, Adam
 
 class SimpleClassifier:
 
@@ -19,7 +19,7 @@ class SimpleClassifier:
                     units = self.n_classes,
                     activation = 'softmax'))
         self.model.compile(loss = 'categorical_crossentropy',
-                           optimizer = 'adam',
+                           optimizer = Adam(lr = 0.0001),
                            metrics = ['accuracy'])
 
 class DeepClassifier:
@@ -40,7 +40,7 @@ class DeepClassifier:
                     units = self.n_classes,
                     activation = 'softmax'))
         self.model.compile(loss = 'categorical_crossentropy',
-                           optimizer = 'adam',
+                           optimizer = Adam(lr = 0.0001),
                            metrics = ['accuracy'])
 
 

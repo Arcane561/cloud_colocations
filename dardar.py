@@ -1,5 +1,5 @@
 from bs4 import BeautifulSoup
-from cache import CachedFile
+from cache import get_cached_files, CachedFile
 import json
 import numpy as np
 import os
@@ -7,6 +7,7 @@ from urllib.request import urlopen, urlretrieve
 from ftplib import FTP
 from datetime import datetime
 from pyhdf.SD import SD, SDC
+import settings
 
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
@@ -22,7 +23,7 @@ def filename_to_datetime(filename):
 
 def __ftp_listing_to_list__(path, t = int):
     with FTP(icare_ftp_url) as ftp:
-        ftp.login(user = "simonpf", passwd = "dardar_geheim!")
+        ftp.login(user = settings.ftp_user, passwd = settings.ftp_password)
         try:
             ftp.cwd(path)
         except:
@@ -69,7 +70,7 @@ def get_file(filename, dest):
 
     print(filename, dest)
     with FTP(icare_ftp_url) as ftp:
-        ftp.login(user = "simonpf", passwd = "dardar_geheim!")
+        ftp.login(user = settings.ftp_user, passwd = settings.ftp_password)
         #try:
         print(filename, dest)
         ftp.cwd(path)
@@ -89,6 +90,16 @@ def get_file_by_date(product, date):
                             "%Y%j%H%M.")
     elif type(date) is not datetime:
         date = datetime(date)
+
+    cached_files = get_cached_files(product,
+            product.replace("_", "-") + "*.hdf")
+    cached_dates = [filename_to_datetime(f) for f in cached_files]
+    print(product)
+    dt_seconds = np.array([(date - cd).seconds for cd in cached_dates])
+    dt_days    = np.array([(date - cd).days for cd in cached_dates])
+    inds = [i for i,(s, d) in enumerate(zip(dt_seconds, dt_days)) if s == 0 and d == 0]
+    if len(inds) > 0:
+        return cached_files[inds[0]]
 
     dates_available = get_files(product, date.year,
                                 date.timetuple().tm_yday)
@@ -186,6 +197,33 @@ class ICAREFile(CachedFile):
 
         return cloud_scenario_simple
 
+    def get_subsampled_cloud_scenario_dardar(self, start = 0, end = -1, subsampling = 20):
+
+        if end > 0:
+            cloud_scenario = np.asarray(self.file_handle.select('CALIPSO_Mask')[:, :])[start:end, :]
+        else:
+            cloud_scenario = np.asarray(self.file_handle.select('CALIPSO_Mask'))[start :, :]
+
+        n = cloud_scenario.shape[0]
+        n_bins = cloud_scenario.shape[1]  // subsampling
+        if cloud_scenario.shape[1] % subsampling > 0:
+            n_bins += 1
+
+        cloud_scenario_simple = np.zeros((n, n_bins))
+
+        bins = np.arange(-1, 13) - 0.5
+        for i in range(n):
+            si = 0
+            for j in range(n_bins):
+                if j < n_bins - 1:
+                    hs, _ = np.histogram(cloud_scenario[i, si:si + subsampling], bins = bins)
+                else:
+                    hs, _ = np.histogram(cloud_scenario[i, si:], bins = bins)
+                cloud_scenario_simple[i, j] = np.argmax(hs)
+                si += subsampling
+
+        return cloud_scenario_simple
+
     def plot_footprint(self, ax = None):
         if ax is None:
             ax = plt.gca()
@@ -223,7 +261,7 @@ class ICAREData:
 
     def __ftp_listing_to_list__(path, t = int):
         with FTP(ICAREData.ftp_url) as ftp:
-            ftp.login(user = "simonpf", passwd = "dardar_geheim!")
+            ftp.login(user = settings.ftp_user, passwd = settings.ftp_password)
             try:
                 ftp.cwd(path)
             except:
@@ -244,7 +282,7 @@ class ICAREData:
 
     def __init__(self):
         self.ftp = FTP(ICAREData.ftp_url)
-        self.ftp.login(user = "simonpf", passwd = "dardar_geheim!")
+        self.ftp.login(user = settings.ftp_user, passwd = settings.ftp_password)
         self.ftp.cwd("SPACEBORNE")
         self.ftp.cwd("MULTI_SENSOR")
 

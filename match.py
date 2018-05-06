@@ -95,6 +95,37 @@ class Collocation:
         return obj
 
         
+    def get_modis_orbit(self, subsampling, bands):
+        rads_modis = None
+        lats_modis = None
+        lons_modis = None
+
+        ds = subsampling
+
+        for mf in self.modis_files:
+           print(mf.file)
+           if rads_modis is None:
+               rads = np.stack([mf.get_radiances(band = b)[::ds, ::ds]
+                               for b in bands])
+               lats = mf.get_lats()[::ds, ::ds]
+               lons = mf.get_lons()[::ds, ::ds]
+           else:
+               rads_modis = np.append(rads_modis,
+                                      [mf.get_radiances(band = b)[::ds, ::ds]
+                                          for b in bands],
+                                      axis = 0)
+               lats_modis = np.append(lats_modis,
+                                      mf.get_lats()[ ::ds, ::ds],
+                                      axis = 0)
+               lons_modis = np.append(lons_modis,
+                                      mf.get_lons()[::ds, ::ds],
+                                      axis = 0)
+
+        valid = np.logical_not(np.any(np.isnan(lats_modis), axis = 1))
+        lons = lons_modis[valid, :]
+        lats = lats_modis[valid, :]
+        rads = rads_modis[valid, :]
+
     def plot_modis_footprint(self, index = 0, ax = None, width = 400, subsampling = 4):
 
         if ax is None:
@@ -196,11 +227,13 @@ class Match:
 
         inds = np.where((dt_days_1 >= 0) * (dt_days_2 < 0))[0]
 
-        print(inds)
-        inds_start = np.maximum(inds[0] - 1, 0)
-        inds_end = inds[-1]
-        return [modis.ModisFile(mf, "MYD03") \
-                for mf in self.modis_files[inds_start : inds_end]]
+        if inds.size == 0:
+            return []
+        else:
+            inds_start = np.maximum(inds[0] - 1, 0)
+            inds_end = inds[-1]
+            return [modis.ModisFile(mf, "MYD03") \
+                    for mf in self.modis_files[inds_start : inds_end]]
 
     def get_collocations(self, index = 0, step = 42):
         modis_trees = []

@@ -4,6 +4,7 @@ from datetime import datetime
 from ftplib import FTP
 from urllib.request import urlopen, urlretrieve
 from utils import ensure_extension
+import settings
 
 class LAADS:
 
@@ -72,7 +73,7 @@ class ICARE:
 
     def __ftp_listing_to_list__(path, t = int):
         with FTP(ICARE.base_url) as ftp:
-            ftp.login(user = "simonpf", passwd = "dardar_geheim!")
+            ftp.login(user = settings.ftp_user, passwd = settings.ftp_password)
             try:
                 ftp.cwd(path)
             except:
@@ -106,7 +107,7 @@ class ICARE:
 
         print(filename, dest)
         with FTP(self.base_url) as ftp:
-            ftp.login(user = "simonpf", passwd = "dardar_geheim!")
+            ftp.login(user = settings.ftp_user, passwd = settings.ftp_password)
             #try:
             ftp.cwd(path)
             with open(dest, 'wb') as f:

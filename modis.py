@@ -7,6 +7,7 @@ import numpy as np
 from pyhdf.SD import SD, SDC
 import os
 from data_providers import LAADS, ICARE
+from scipy.misc import bytescale
 
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
@@ -168,12 +169,35 @@ class ModisFile:
         self.file = LAADSFile(filename, subfolder = self.product)
         self.geo_file = LAADSFile(geo_filename, subfolder = self.geo_product)
 
-        print("opening ", self.file.file)
         self.file_handle = SD(self.file.file, SDC.READ)
         self.geo_file_handle = SD(self.geo_file.file, SDC.READ)
 
         self.raw_data = self.file_handle.select("EV_1KM_Emissive")
         self.attributes = self.raw_data.attributes(full = 1)
+
+    def plot_rgb(self, ao_start = 0, ao_end = -1, xo_start = 0, xo_end = -1, ax = None, bands = [1, 4, 3]):
+        if ax is None:
+            ax = plt.gca()
+
+        lats = self.get_lats()
+
+        if ao_end < 0:
+            ao_end = lats.shape[0]
+
+        if xo_end < 0:
+            ao_end = lats.shape[1]
+
+        r = self.get_radiances(band = bands[0], ao_start = ao_start, ao_end = ao_end, xo_start = xo_start, xo_end = xo_end)
+        g = self.get_radiances(band = bands[1], ao_start = ao_start, ao_end = ao_end, xo_start = xo_start, xo_end = xo_end)
+        b = self.get_radiances(band = bands[2], ao_start = ao_start, ao_end = ao_end, xo_start = xo_start, xo_end = xo_end)
+
+        image = np.zeros((r.shape[0], r.shape[1], 3), dtype = np.uint8)
+        image[:, :, 0] = bytescale(r)
+        image[:, :, 1] = bytescale(g)
+        image[:, :, 2] = bytescale(b)
+
+        ax.imshow(image)
+
 
     def get_lats(self):
         return np.asarray(self.geo_file_handle.select('Latitude')[:, :])
@@ -184,7 +208,10 @@ class ModisFile:
     def get_solar_zenith(self):
         return np.asarray(self.geo_file_handle.select('SolarZenith')[:, :])
 
-    def get_solar_azimuth(self):
+    def get_center_solar_zenith(self):
+        return np.asarray(self.geo_file_handle.select('SolarZenith')[:, :])
+
+    def get_center_solar_azimuth(self):
         return np.asarray(self.geo_file_handle.select('SolarAzimuth')[:, :])
 
     def get_solar_zenith(self, start = 0, end = -1):
@@ -198,56 +225,80 @@ class ModisFile:
 
 
         inds = np.where(cloud_scenario == 2)[0]
-        print(inds)
         if len(inds) > 1:
             z = np.asarray(self.file_handle.select('CS_TRACK_Height')[:])
             return z[inds[0]]
         else:
             return - 9999.0
 
-    def get_radiances(self, band = 1):
+    def get_radiances(self, band = 1, ao_start = 0, ao_end = -1, xo_start = 0, xo_end = -1):
 
         band_offset = 0
+        reflective = True
+
         if band in range(1, 3):
             ds_name = "EV_250_Aggr1km_RefSB"
             band_offset = 1
+            reflective = True
         elif band in range(3, 8):
             ds_name = "EV_500_Aggr1km_RefSB"
             band_offset = 3
+            reflective = True
         elif band in range(8, 20):
             ds_name = "EV_1KM_RefSB"
             band_offset = 8
+            reflective = True
         elif band in range(20, 26) or band in range(27, 37):
             ds_name = "EV_1KM_Emissive"
             band_offset = 20
             if band > 26:
                 band_offset += 1
+            reflective = False
         elif band == 26:
             ds_name = "EV_Band26"
+            reflective = False
 
 
         raw_data = self.file_handle.select(ds_name)
-        if band_offset > 0:
-            data = self.raw_data[band - band_offset, :, :].astype(np.double)
-        else:
-            data = self.raw_data[0, :, :].astype(np.double)
 
-        attributes  = raw_data.attributes(full = 1)
+        shape = raw_data.info()[2]
+        if ao_end == -1:
+            ao_end = shape[1] - 1
+
+        if xo_end == -1:
+            xo_end = shape[2] - 1
+
+        ao_start = int(ao_start)
+        ao_end = int(ao_end)
+        xo_start = int(xo_start)
+        xo_end = int(xo_end)
+
+        if band_offset > 0:
+
+            data = raw_data[band - band_offset, ao_start : ao_end, xo_start : xo_end].astype(np.double)
+        else:
+            data = raw_data[ao_start : ao_end, xo_start : xo_end].astype(np.double)
+
+        attributes  = raw_data.attributes()
         valid_range = attributes["valid_range"]
-        offsets     = attributes["radiance_offsets"]
-        scales      = attributes["radiance_scales"]
 
+        if reflective:
+            offsets     = np.asarray(attributes["reflectance_offsets"])
+            scales      = np.asarray(attributes["reflectance_scales"])
+        else:
+            offsets     = np.asarray(attributes["radiance_offsets"])
+            scales      = np.asarray(attributes["radiance_scales"])
 
         if band_offset > 0:
-            valid_min = valid_range[0][0]
-            valid_max = valid_range[0][1]
-            offset = offsets[0][0]
-            scale_factor = scales[0][0]
+            valid_min = valid_range[0]
+            valid_max = valid_range[1]
+            offset = offsets[band - band_offset]
+            scale_factor = scales[band - band_offset]
         else:
-            valid_min = valid_range[0][0]
-            valid_max = valid_range[0][1]
-            offset = offsets[0]
-            scale_factor = scales[0]
+            valid_min = valid_range[0]
+            valid_max = valid_range[1]
+            offset = offsets
+            scale_factor = scales
 
         fill_value = attributes["_FillValue"]
 
@@ -255,7 +306,6 @@ class ModisFile:
                                 data < valid_min)
         invalid = np.logical_or(invalid, data == fill_value)
         data[invalid] = np.nan
-
 
         data = (data - offset) * scale_factor
 

@@ -3,9 +3,13 @@ import os
 import numpy as np
 from netCDF4 import Dataset
 
-def extract_cloud_types(ds):
+def extract_cloud_types(ds, neighborhood):
 
+    nh = neighborhood
+
+    openend = False
     if not type(ds) == Dataset:
+        opened = True
         ds = Dataset(ds)
 
     root = ds.groups["output"]
@@ -16,22 +20,32 @@ def extract_cloud_types(ds):
 
     bins = np.arange(10) + 0.5
 
+    cntr = cs.shape[1] // 2
     for i in range(n):
-        h, _ = np.histogram(cs[i, :, :], bins = bins)
+        h, _ = np.histogram(cs[i, cntr - nh: cntr + nh + 1, :], bins = bins)
         if h.sum() == 0.0:
             y[i, 0] = 1.0
         else:
             y[i, 1 + np.argmax(h)] = 1.0
+
+    if opened:
+        ds.close()
+
     return y
 
 def extract_5_by_5_neighborhood(ds):
 
+    openend = False
     if not type(ds) == Dataset:
+        opened = True
         ds = Dataset(ds)
 
     root = ds.groups["input"]
     modis = np.array(root.variables["modis"])
-    x = modis[:-1, :, 10 - 2 : 10 + 3, 10 - 2 : 10 + 3]
+    x = modis[:, :, 10 - 2 : 10 + 3, 10 - 2 : 10 + 3]
+
+    if opened:
+        ds.close()
 
     return x
 
@@ -41,7 +55,7 @@ def whiten(x):
 def preprocess(x):
     for i in range(x.shape[1]):
         inds = np.isnan(x[:, i, :, :])
-        x[:, i, :, :][inds] = np.mean(x[:, i, :, :])
+        x[:, i, :, :][inds] = np.nanmean(x[:, i, :, :])
     return whiten(x)
 
 def combine_training_files(training_data, new_file):
