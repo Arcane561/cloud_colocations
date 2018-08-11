@@ -153,6 +153,21 @@ class ICAREFile(CachedFile):
     def get_cloud_scenario(self):
         return np.asarray(self.file_handle.select('CLOUDSAT_Cloud_Scenario')[:, :])
 
+    def get_cloud_scenario_caliop(self):
+        return np.asarray(self.file_handle.select('CALIOP_Mask_Refined')[:, :])
+
+    def get_cloudsat_reflectivity(self):
+        return np.asarray(self.file_handle.select('CLOUDSAT_2B_GEOPROF_Radar_Reflectivity')[:, :])
+
+    def get_caliop_backscatter(self):
+        return np.asarray(self.file_handle.select('CALIOP_Total_Attenuated_Backscatter_532')[:, :])
+
+    def get_cloudsat_reflectivity(self):
+        return np.asarray(self.file_handle.select('CLOUDSAT_2B_GEOPROF_Radar_Reflectivity')[:, :])
+
+    def get_height(self):
+        return np.asarray(self.file_handle.select('CS_TRACK_Height')[:])
+
     def get_cloud_height(self, start = 0, end = -1):
 
         i = (start + end) // 2
@@ -170,6 +185,22 @@ class ICAREFile(CachedFile):
         else:
             return - 9999.0
 
+    def get_mean_height(self, subsampling):
+        z = np.asarray(self.file_handle.select('CS_TRACK_Height')[:])
+        n_bins = z.shape[0]  // subsampling
+        if z.shape[0] % subsampling > 0:
+            n_bins += 1
+        z_means = np.zeros(n_bins)
+
+        si = 0
+        for i in range(n_bins):
+            if i < n_bins - 1:
+                z_means[i] = np.mean(z[si:si + subsampling])
+            else:
+                z_means[i] = np.mean(z[si:])
+            si += subsampling
+        return z_means
+        
     def get_subsampled_cloud_scenario(self, start = 0, end = -1, subsampling = 20):
 
         if end > 0:
@@ -184,7 +215,7 @@ class ICAREFile(CachedFile):
 
         cloud_scenario_simple = np.zeros((n, n_bins))
 
-        bins = np.arange(0, 11) - 0.5
+        bins = np.arange(1, 11) - 0.5
         for i in range(n):
             si = 0
             for j in range(n_bins):
@@ -192,6 +223,12 @@ class ICAREFile(CachedFile):
                     hs, _ = np.histogram(cloud_scenario[i, si:si + subsampling], bins = bins)
                 else:
                     hs, _ = np.histogram(cloud_scenario[i, si:], bins = bins)
+
+                if hs.sum() == 0.0:
+                    cloud_scenario_simple[i, j] = 0.0
+                else:
+                    cloud_scenario_simple[i, j] = np.argmax(hs)
+
                 cloud_scenario_simple[i, j] = np.argmax(hs)
                 si += subsampling
 
@@ -200,9 +237,9 @@ class ICAREFile(CachedFile):
     def get_subsampled_cloud_scenario_dardar(self, start = 0, end = -1, subsampling = 20):
 
         if end > 0:
-            cloud_scenario = np.asarray(self.file_handle.select('CALIPSO_Mask')[:, :])[start:end, :]
+            cloud_scenario = np.asarray(self.file_handle.select('CALIOP_Mask_Refined')[:, :])[start:end, :]
         else:
-            cloud_scenario = np.asarray(self.file_handle.select('CALIPSO_Mask'))[start :, :]
+            cloud_scenario = np.asarray(self.file_handle.select('CALIOP_Mask_Refined'))[start :, :]
 
         n = cloud_scenario.shape[0]
         n_bins = cloud_scenario.shape[1]  // subsampling

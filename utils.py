@@ -43,3 +43,9 @@ def grid_to_edges_2d(grid):
 
 
 
+def reshape_and_normalize(x):
+        x = np.array(np.transpose(x[0, :, :, :], (1, 2, 0)))
+        x_min = np.min(x, axis = (0, 1), keepdims = True)
+        x_max = np.max(x, axis = (0, 1), keepdims = True)
+        x = (x - x_min) / (x_max - x_min)
+        return x

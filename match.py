@@ -39,7 +39,7 @@ class Collocation:
 
     def get_lats(self):
         lats_dardar = np.zeros(0)
-        lats_dardar = dardar_file.get_lats()[self.collocations[:, 0]]
+        lats_dardar = self.dardar_file.get_lats()[self.collocations[:, 0]]
 
         lats_modis  = np.zeros(0)
         for i, mf in enumerate(self.modis_files):
@@ -53,7 +53,7 @@ class Collocation:
 
     def get_lons(self):
         lons_dardar = np.zeros(0)
-        lons_dardar = dardar_file.get_lons()[self.collocations[:, 0]]
+        lons_dardar = self.dardar_file.get_lons()[self.collocations[:, 0]]
 
         lons_modis  = np.zeros(0)
         for i, mf in enumerate(self.modis_files):
@@ -103,17 +103,16 @@ class Collocation:
         ds = subsampling
 
         for mf in self.modis_files:
-           print(mf.file)
            if rads_modis is None:
-               rads = np.stack([mf.get_radiances(band = b)[::ds, ::ds]
+               rads_modis = np.stack([mf.get_radiances(band = b)[::ds, ::ds]
                                for b in bands])
-               lats = mf.get_lats()[::ds, ::ds]
-               lons = mf.get_lons()[::ds, ::ds]
+               lats_modis = mf.get_lats()[::ds, ::ds]
+               lons_modis = mf.get_lons()[::ds, ::ds]
            else:
                rads_modis = np.append(rads_modis,
                                       [mf.get_radiances(band = b)[::ds, ::ds]
                                           for b in bands],
-                                      axis = 0)
+                                      axis = 1)
                lats_modis = np.append(lats_modis,
                                       mf.get_lats()[ ::ds, ::ds],
                                       axis = 0)
@@ -121,10 +120,12 @@ class Collocation:
                                       mf.get_lons()[::ds, ::ds],
                                       axis = 0)
 
-        valid = np.logical_not(np.any(np.isnan(lats_modis), axis = 1))
+        lats_modis
+        valid = np.all(~np.isnan(lats_modis), axis = 1)
         lons = lons_modis[valid, :]
         lats = lats_modis[valid, :]
-        rads = rads_modis[valid, :]
+        rads = rads_modis[:, valid, :]
+        return lons, lats, rads
 
     def plot_modis_footprint(self, index = 0, ax = None, width = 400, subsampling = 4):
 

@@ -304,6 +304,7 @@ class ModisFile:
 
         invalid = np.logical_or(data > valid_max,
                                 data < valid_min)
+        print(data.max(), valid_max, fill_value)
         invalid = np.logical_or(invalid, data == fill_value)
         data[invalid] = np.nan
 
