@@ -26,6 +26,10 @@ class Caliop01kmclay(Hdf4File):
     def get_base_pressure(self, c_i, dn):
         return self.file_handle.select('Layer_Base_Pressure')[c_i - dn : c_i + dn + 1,:4]
 
+    def get_profile_id(self, c_i, dn):
+        return self.file_handle.select('Profile_ID')[c_i - dn : c_i + dn + 1]
+
+
 class ModisMyd03(Hdf4File):
     def __init__(self, filename):
         super().__init__(filename)

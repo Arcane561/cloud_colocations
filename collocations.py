@@ -52,6 +52,10 @@ class OutputFile:
         self.layers = self.root.createDimension("cloud_layers", 4)
         self.bands = self.root.createDimension("modis_bands", 7)
 
+        self.profile_indices = self.root.createVariable("profile_index",
+                                                        "i4",
+                                                        ("collocations",
+                                                        "collocation_size"))
         self.ctp = self.root.createVariable("cloud_top_pressure", "f4",
                                             ("collocations",
                                              "collocation_size",
@@ -91,7 +95,7 @@ class OutputFile:
                                                      "collocation_size"))
         self.ci = 0
 
-    def add(self, ctp, cbp, cta, cba, caliop_lats,
+    def add(self, pis, ctp, cbp, cta, cba, caliop_lats,
             caliop_lons, modis_data, modis_lats, modis_lons):
         """
         Add a collocation to the file.
@@ -123,6 +127,7 @@ class OutputFile:
             modis_lons(numpy.ndarray): 2D array containing the MODIS
                 longitudes for each pixel of the collocation.
         """
+        self.profile_index[self.ci, :] = pis
         self.ctp[self.ci, :, :] = ctp
         self.cbp[self.ci, :, :] = cbp
         self.cta[self.ci, :, :] = cta
@@ -187,7 +192,7 @@ class Collocations:
         if not self.folder is None:
             shutil.rmtree(self.folder)
 
-    def find_collocation(lats_modis, lons_modis, lat, lon, margin, dmax):
+    def find_collocation(self, lats_modis, lons_modis, lat, lon, margin, dmax):
         """
         Finds indices of the center of a collocation in a modis file for
         given coordinates of a Caliop profile.
@@ -229,9 +234,7 @@ class Collocations:
 
         return i, j, d
 
-    def find_collocations(collocation,
-                          dn = 50,
-                          maxdist = 1.0):
+    def find_collocations(self, dn = 50, maxdist = 1.0):
         """
         Implements the processing loop for the extraction of collocations.
         Reads consecutively through all caliop and modis files from the
@@ -242,21 +245,21 @@ class Collocations:
         """
 
         path = "/home/simonpf/Dendrite/UserAreas/Simon/cloud_collocations"
-        output_file = OutputFile(path, collocation.year, collocation.day, dn)
+        output_file = OutputFile(path, self.year, self.day, dn)
 
-        caliop_files = collocation.files[2]
-        modis_geo_files = collocation.files[1]
-        modis_files = collocation.files[0]
+        caliop_files = self.files[2]
+        modis_geo_files = self.files[1]
+        modis_files = self.files[0]
 
         # Caliop sorted files indices and file index
-        fis_c = np.argsort([collocation.products[2].filename_to_date(f) \
+        fis_c = np.argsort([self.products[2].filename_to_date(f) \
                             for f in caliop_files])
         fi_c = 0
 
         # Modis sorted file indices and file index
-        fis_m_g = np.argsort([collocation.products[1].filename_to_date(f) \
+        fis_m_g = np.argsort([self.products[1].filename_to_date(f) \
                             for f in modis_geo_files])
-        fis_m = np.argsort([collocation.products[0].filename_to_date(f) \
+        fis_m = np.argsort([self.products[0].filename_to_date(f) \
                             for f in modis_files])
         fi_m = 0
 
@@ -264,13 +267,13 @@ class Collocations:
         d_old = 0.0
 
 
-        f_c = Caliop01kmclay(os.path.join(collocation.folder,
+        f_c = Caliop01kmclay(os.path.join(self.folder,
                                         caliop_files[fis_c[fi_c]]))
         lats_c = f_c.get_latitudes()
         lons_c = f_c.get_longitudes()
-        f_m = ModisMyd03(os.path.join(collocation.folder,
+        f_m = ModisMyd03(os.path.join(self.folder,
                                     modis_geo_files[fis_m_g[fi_m]]))
-        f_md = ModisMyd021km(os.path.join(collocation.folder,
+        f_md = ModisMyd021km(os.path.join(self.folder,
                                         modis_files[fis_m[fi_m]]))
         lats_m = f_m.get_latitudes()
         lons_m = f_m.get_longitudes()
@@ -281,11 +284,12 @@ class Collocations:
 
             d_old = d
             j_m, k_m, d = self.find_collocation(lats_m, lons_m, lats_c[i_c],
-                                        lons_c[i_c], dn, 1.0)
+                                                lons_c[i_c], dn, 1.0)
 
             if d < maxdist and j_m > 0 and k_m > 0:
                 try:
-                    output_file.add(f_c.get_top_pressure(i_c, dn),
+                    output_file.add(f_c.get_profile_index(i_c, dn),
+                                    f_c.get_top_pressure(i_c, dn),
                                     f_c.get_base_pressure(i_c, dn),
                                     f_c.get_top_altitude(i_c, dn),
                                     f_c.get_base_altitude(i_c, dn),
@@ -297,16 +301,16 @@ class Collocations:
                                     lons_m[j_m - dn : j_m + dn + 1,
                                         k_m - dn : k_m + dn + 1])
                 except:
-                    print("Error day {0}: {1} {2}".format(collocation.day,
+                    print("Error day {0}: {1} {2}".format(self.day,
                                                           j_m, k_m))
 
             # If distance increase go to next MODIS file.
             if d_old > 2.0 * maxdist and d > 2.0 * maxdist and d > d_old:
                 fi_m += 1
                 if fi_m < len(fis_m) and fi_m < len(fis_m_g):
-                    f_m = ModisMyd03(os.path.join(collocation.folder,
+                    f_m = ModisMyd03(os.path.join(self.folder,
                                                 modis_geo_files[fis_m_g[fi_m]]))
-                    f_md = ModisMyd021km(os.path.join(collocation.folder ,
+                    f_md = ModisMyd021km(os.path.join(self.folder ,
                                                     modis_files[fis_m[fi_m]]))
                     lats_m = f_m.get_latitudes()
                     lons_m = f_m.get_longitudes()
@@ -320,22 +324,22 @@ class Collocations:
             if i_c > lats_c.size - dn:
                 fi_c += 1
                 if fi_c < len(fis_c):
-                    f_c = Caliop01kmclay(os.path.join(collocation.folder,
+                    f_c = Caliop01kmclay(os.path.join(self.folder,
                                                     caliop_files[fis_c[fi_c]]))
                     lats_c = f_c.get_latitudes()
                     lons_c = f_c.get_longitudes()
                     i_c = dn
                     print("Opening caliop file: ",
-                          collocation.products[2].filename_to_date(
+                          self.products[2].filename_to_date(
                               caliop_files[fis_c[fi_c]]
                           )
                     )
                 continue
 
         output_file.close()
-        print("Finished processing day {0}.".format(collocation.day))
+        print("Finished processing day {0}.".format(self.day))
 
-    def find_collocations_overlapping(collocation,
+    def find_collocations_overlapping(self,
                                       dn = 50,
                                       maxdist = 1.0):
         """
@@ -347,21 +351,21 @@ class Collocations:
 
         path = ("/home/simonpf/Dendrite/UserAreas/Simon/cloud_collocations/"
                 "test_data")
-        output_file = OutputFile(path, collocation.year, collocation.day, dn)
+        output_file = OutputFile(path, self.year, self.day, dn)
 
-        caliop_files = collocation.files[2]
-        modis_geo_files = collocation.files[1]
-        modis_files = collocation.files[0]
+        caliop_files = self.files[2]
+        modis_geo_files = self.files[1]
+        modis_files = self.files[0]
 
         # Caliop sorted file indices and file index
-        fis_c = np.argsort([collocation.products[2].filename_to_date(f) \
+        fis_c = np.argsort([self.products[2].filename_to_date(f) \
                             for f in caliop_files])
         fi_c = 0
 
         # Modis sorted file indices and file index
-        fis_m_g = np.argsort([collocation.products[1].filename_to_date(f) \
+        fis_m_g = np.argsort([self.products[1].filename_to_date(f) \
                             for f in modis_geo_files])
-        fis_m = np.argsort([collocation.products[0].filename_to_date(f) \
+        fis_m = np.argsort([self.products[0].filename_to_date(f) \
                             for f in modis_files])
         fi_m = 0
 
@@ -369,13 +373,13 @@ class Collocations:
         d_old = 0.0
 
 
-        f_c = Caliop01kmclay(os.path.join(collocation.folder,
+        f_c = Caliop01kmclay(os.path.join(self.folder,
                                         caliop_files[fis_c[fi_c]]))
         lats_c = f_c.get_latitudes()
         lons_c = f_c.get_longitudes()
-        f_m = ModisMyd03(os.path.join(collocation.folder,
+        f_m = ModisMyd03(os.path.join(self.folder,
                                     modis_geo_files[fis_m_g[fi_m]]))
-        f_md = ModisMyd021km(os.path.join(collocation.folder,
+        f_md = ModisMyd021km(os.path.join(self.folder,
                                         modis_files[fis_m[fi_m]]))
         lats_m = f_m.get_latitudes()
         lons_m = f_m.get_longitudes()
@@ -389,7 +393,8 @@ class Collocations:
                                         lons_c[i_c], 0, 1.0)
 
             try:
-                output_file.add(f_c.get_top_pressure(i_c, dn),
+                output_file.add(f_c.get_profile_index(i_c, dn),
+                                f_c.get_top_pressure(i_c, dn),
                                 f_c.get_base_pressure(i_c, dn),
                                 f_c.get_top_altitude(i_c, dn),
                                 f_c.get_base_altitude(i_c, dn),
@@ -401,7 +406,8 @@ class Collocations:
                                 lons_m[j_m - dn : j_m + dn + 1,
                                     k_m - dn : k_m + dn + 1])
             except:
-                output_file.add(f_c.get_top_pressure(i_c, dn),
+                output_file.add(f_c.get_profile_index(i_c, dn),
+                                f_c.get_top_pressure(i_c, dn),
                                 f_c.get_base_pressure(i_c, dn),
                                 f_c.get_top_altitude(i_c, dn),
                                 f_c.get_base_altitude(i_c, dn),
@@ -418,9 +424,9 @@ class Collocations:
             if d_old > 2.0 * maxdist and d > 2.0 * maxdist and d > d_old:
                 fi_m += 1
                 if fi_m < len(fis_m) and fi_m < len(fis_m_g):
-                    f_m = ModisMyd03(os.path.join(collocation.folder,
+                    f_m = ModisMyd03(os.path.join(self.folder,
                                                 modis_geo_files[fis_m_g[fi_m]]))
-                    f_md = ModisMyd021km(os.path.join(collocation.folder ,
+                    f_md = ModisMyd021km(os.path.join(self.folder ,
                                                     modis_files[fis_m[fi_m]]))
                     lats_m = f_m.get_latitudes()
                     lons_m = f_m.get_longitudes()
@@ -434,27 +440,33 @@ class Collocations:
             if i_c > lats_c.size - dn:
                 fi_c += 1
                 if fi_c < len(fis_c):
-                    f_c = Caliop01kmclay(os.path.join(collocation.folder,
+                    f_c = Caliop01kmclay(os.path.join(self.folder,
                                                     caliop_files[fis_c[fi_c]]))
                     lats_c = f_c.get_latitudes()
                     lons_c = f_c.get_longitudes()
                     i_c = dn
                     print("Opening caliop file: ",
-                          collocation.products[2].filename_to_date(
+                          self.products[2].filename_to_date(
                               caliop_files[fis_c[fi_c]]
                           )
                     )
                 continue
 
         output_file.close()
-        print("Finished processing day {0}.".format(collocation.day))
+        print("Finished processing day {0}.".format(self.day))
 
 dn = 50
 
 def process_day(year, day):
     c = Collocations(year, day, [Modis(), ModisGeo(), Caliop()])
     c.download_files()
-    c.find_collocations(c)
+    c.find_collocations()
+    c.remove_folder()
+
+def process_test_day(year, day):
+    c = Collocations(year, day, [Modis(), ModisGeo(), Caliop()])
+    c.download_files()
+    c.find_collocations_overlapping()
     c.remove_folder()
 
 
