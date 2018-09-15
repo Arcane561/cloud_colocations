@@ -65,7 +65,7 @@ class LAADS:
 class ICARE:
 
     base_url   = "ftp.icare.univ-lille1.fr"
-    product_paths = {"DARDAR_MASK" : "/SPACEBORNE/MULTI_SENSOR/",
+    product_paths = {"CALIOP" : "/SPACEBORNE/CALIOP/01kmCLay.v4.10/",
                      "MYD021KM"    : "/SPACEBORNE/MODIS/MYD021KM.006/",
                      "MYD03"       : "/SPACEBORNE/MODIS/MYD03.006/"}
     filename_to_datetime = None
@@ -83,15 +83,15 @@ class ICARE:
             ls = ftp.nlst()
         return [t(l) for l in ls]
 
-    def __init__(self):
-        pass
+    def __init__(self, product_path, date_format):
+        self.product_path = product_path
+        self.date_format  = date_format
 
     def get_files(self, product, year, day):
         day_str = str(day)
         day_str = "0" * (3 - len(day_str)) + day_str
         date = datetime.strptime(str(year) + str(day_str), "%Y%j")
-        product_path = self.product_paths[product]
-        path = os.path.join(product_path, str(year),
+        path = os.path.join(self.product_path, str(year),
                             date.strftime("%Y_%m_%d"))
         ls = ICARE.__ftp_listing_to_list__(path, str)
         return [l for l in ls if l[-3:] == "hdf"]

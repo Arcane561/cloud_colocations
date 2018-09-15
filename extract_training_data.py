@@ -47,7 +47,7 @@ class TrainingData:
                                                "input_size"))
         self.y = self.of.createVariable("y", "f4", "collocations")
 
-    def extract(self, n = -1):
+    def extract(self, start = -1, end = -1):
         """
         Extract training data from collocation data.
 
@@ -58,22 +58,28 @@ class TrainingData:
         """
         dn = self.dn
 
-        if n < 0:
+        if start < 0 or end < 0:
             fs = self.files
         else:
-            fs = self.files[:n]
+            fs = self.files[start : end]
         fi = 0
 
         for cf in fs:
             print("Processing file {0}".format(cf))
+
             ds = Dataset(cf)
             nc = ds.dimensions["collocations"].size
             dn0 = (ds.dimensions["collocation_size"].size - 1) // 2
+            x = ds.variables["modis_data"][:, 4:5, dn0 - dn : dn0 + dn + 1,
+                                           dn0 - dn : dn0 + dn + 1]
+            y = ds.variables["cloud_top_pressure"][:, dn0, 0 : 1]
+            inds = np.logical_and(y.ravel() > 0.0,
+                                  np.logical_not(np.any(np.isnan(x), axis = (1, 2)))
 
-            self.x[fi : fi + nc, :, :, :] = ds.variables["modis_data"]\
-                                            [:, :, dn0 - dn : dn0 + dn + 1,
-                                             dn0 - dn : dn0 + dn + 1]
-            self.y[fi : fi + nc] = ds.variables["cloud_top_altitude"][:, dn0, 0]
+            nc = inds.sum()
+
+            self.y[fi : fi + nc] = y[inds, :]
+            self.x[fi : fi + nc, :, :, :] = x[inds, :, : ,:]
             fi += nc
             ds.close()
 
@@ -232,5 +238,5 @@ class ComplexTrainingData:
         self.of.close()
 
 cd = TrainingData(50)
-cd.extract(20)
+cd.extract(start = 50, end = 250)
 cd.close()
