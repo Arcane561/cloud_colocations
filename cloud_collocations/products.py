@@ -258,8 +258,6 @@ class IcareProduct:
             pos1 = [dt.total_seconds() > 0.0 for dt in dts1]
 
             inds = [i for i, (p0, p1) in enumerate(zip(pos0, pos1)) if p0 and not p1]
-            print(pos0)
-            print(inds)
             files += [fs[i] for i in inds]
 
             t += dt
@@ -343,7 +341,6 @@ class IcareProduct:
 
 def modis_name_to_date(s):
     """Convert MODIS filename to date"""
-    print(s)
     i = s.index(".")
     s = s[i + 1 :]
     j = s.index(".")

@@ -8,15 +8,40 @@ from pyhdf.SD import SD, SDC
 from cloud_collocations.products import file_cache, caliop, modis, modis_geo
 
 class IcareFile:
-
+    """
+    Base class for files from the Icare data center. Provides abstract class
+    methods to obtain files for a given point in time or time range.
+    """
     @classmethod
     def get_by_date(cls, t):
+        """
+        Return file with the latest start point earlier than the given
+        datetime :code:`t`.
+
+        Parameters:
+
+            t(datetime.datetime): :code:`datetime` object representing the point
+            in time for which to find the icare file.
+
+        Returns:
+
+            The file object with the latest found start time berfore the given
+            time.
+        """
         filename = cls.product.get_file_by_date(t)
         path     = cls.product.download_file(filename)
         return cls(path)
 
     @classmethod
     def get_files_in_range(cls, t0, t1):
+        """
+        Get files within time range.
+
+        Parameters:
+
+            t0(datetime.datetime): :code:`date`
+
+        """
         filenames = cls.product.get_files_in_range(t0, t1)
         objs = []
         for f in filenames:
@@ -118,7 +143,7 @@ class ModisMyd03(Hdf4File, IcareFile):
         dlats = lats - lat
         dlons = lons - lon
 
-        d = dlats ** 2 + dlons ** 2
+        d = (dlats) ** 2 + (dlons) ** 2
         ind = np.argmin(d.ravel())
 
         i = ind // n
@@ -157,6 +182,145 @@ class ModisMyd021km(Hdf4File, IcareFile):
 
     def __init__(self, filename):
         super().__init__(filename)
+        self._data = None
+
+    def load_data(self):
+
+        raw_data = self.file_handle.select("EV_250_Aggr1km_RefSB")
+        shape = raw_data.info()[2]
+
+        # Channels 1 - 2 
+        self._data = np.zeros((38, shape[1], shape[2]))
+        self.m = shape[1]
+        self.n = shape[2]
+        self._data[:2, :, :] = raw_data[:, :, :]
+        data = self._data[:2, :, :]
+
+        attributes = raw_data.attributes()
+        valid_range = attributes["valid_range"]
+        valid_min = valid_range[0]
+        valid_max = valid_range[1]
+        offsets     = np.asarray(attributes["reflectance_offsets"])
+        scales      = np.asarray(attributes["reflectance_scales"])
+        fill_value  = attributes["_FillValue"]
+
+        invalid = np.logical_or(data > valid_max,
+                                data < valid_min)
+        invalid = np.logical_or(invalid, data == fill_value)
+        data[invalid] = np.nan
+
+        for i in range(2):
+            data[i, :, :] = (data[i, :, :] - offsets[i]) * scales[i]
+
+        # Channels 3 - 8 
+        raw_data = self.file_handle.select("EV_500_Aggr1km_RefSB")
+        self._data[2:7, :, :] = raw_data[:, :, :]
+        data = self._data[2:7, :, :]
+
+        attributes = raw_data.attributes()
+        valid_range = attributes["valid_range"]
+        valid_min = valid_range[0]
+        valid_max = valid_range[1]
+        offsets     = np.asarray(attributes["reflectance_offsets"])
+        scales      = np.asarray(attributes["reflectance_scales"])
+        fill_value  = attributes["_FillValue"]
+
+        invalid = np.logical_or(data > valid_max,
+                                data < valid_min)
+        invalid = np.logical_or(invalid, data == fill_value)
+        data[invalid] = np.nan
+
+        for i in range(5):
+            data[i, :, :] = (data[i, :, :] - offsets[i]) * scales[i]
+
+        # Channels 8 - 22 
+        raw_data = self.file_handle.select("EV_1KM_RefSB")
+        self._data[7:21, :, :] = raw_data[:14, :, :]
+        data = self._data[7:21, :, :]
+
+        attributes = raw_data.attributes()
+        valid_range = attributes["valid_range"]
+        valid_min = valid_range[0]
+        valid_max = valid_range[1]
+        offsets     = np.asarray(attributes["reflectance_offsets"])
+        scales      = np.asarray(attributes["reflectance_scales"])
+        fill_value  = attributes["_FillValue"]
+
+        invalid = np.logical_or(data > valid_max,
+                                data < valid_min)
+        invalid = np.logical_or(invalid, data == fill_value)
+        data[invalid] = np.nan
+
+        for i in range(14):
+            data[i, :, :] = (data[i, :, :] - offsets[i]) * scales[i]
+
+        # Channels 20 - 26 
+        raw_data = self.file_handle.select("EV_1KM_Emissive")
+        self._data[21:27, :, :] = raw_data[:6, :, :]
+        data = self._data[21:27, :, :]
+
+        attributes = raw_data.attributes()
+        valid_range = attributes["valid_range"]
+        valid_min = valid_range[0]
+        valid_max = valid_range[1]
+        offsets     = np.asarray(attributes["radiance_offsets"])
+        scales      = np.asarray(attributes["radiance_scales"])
+        fill_value  = attributes["_FillValue"]
+
+        invalid = np.logical_or(data > valid_max,
+                                data < valid_min)
+        invalid = np.logical_or(invalid, data == fill_value)
+        data[invalid] = np.nan
+
+        for i in range(6):
+            data[i, :, :] = (data[i, :, :] - offsets[i]) * scales[i]
+
+        # Channel 26
+        raw_data = self.file_handle.select("EV_Band26")
+        self._data[27, :, :] = raw_data[:, :]
+        data = self._data[27, :, :]
+
+        attributes = raw_data.attributes()
+        valid_range = attributes["valid_range"]
+        valid_min = valid_range[0]
+        valid_max = valid_range[1]
+        offsets     = np.asarray(attributes["radiance_offsets"])
+        scales      = np.asarray(attributes["radiance_scales"])
+        fill_value  = attributes["_FillValue"]
+
+        invalid = np.logical_or(data > valid_max,
+                                data < valid_min)
+        invalid = np.logical_or(invalid, data == fill_value)
+        data[invalid] = np.nan
+
+        data[:, :] = (data[:, :] - offsets) * scales
+
+        # Channels 28 - 38 
+        raw_data = self.file_handle.select("EV_1KM_Emissive")
+        self._data[28:38, :, :] = raw_data[6:, :, :]
+        data = self._data[28:38, :, :]
+
+        attributes = raw_data.attributes()
+        valid_range = attributes["valid_range"]
+        valid_min = valid_range[0]
+        valid_max = valid_range[1]
+        offsets     = np.asarray(attributes["radiance_offsets"])
+        scales      = np.asarray(attributes["radiance_scales"])
+        fill_value  = attributes["_FillValue"]
+
+        invalid = np.logical_or(data > valid_max,
+                                data < valid_min)
+        invalid = np.logical_or(invalid, data == fill_value)
+        data[invalid] = np.nan
+
+        for i in range(9):
+            data[i, :, :] = (data[i, :, :] - offsets[6 + i]) * scales[6 + i]
+
+    @property
+    def data(self):
+        if self._data is None:
+            self.load_data()
+        return self._data
 
     def get_input_data(self, c_i, c_j, dn):
         bands = [20, 27, 28, 29, 31, 32, 33]
