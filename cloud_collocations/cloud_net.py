@@ -4,6 +4,8 @@ and training of convolutional neural networks (CCNs) for cloud detection and
 retrievals.
 """
 import numpy as np
+import scipy as sp
+import scipy.signal
 import keras
 from keras.models               import Sequential
 from keras.layers.convolutional import Conv2D, SeparableConv2D
@@ -93,8 +95,22 @@ class LRDecay(keras.callbacks.Callback):
 ################################################################################
 
 class CloudNetBase:
+    """
+    The base class for CloudNet CNNs.
 
-    def load(path):
+    The purpose of this class is simply to provide utility functions for loading
+    and saving of models.
+    """
+    @classmethod
+    def load(cls, path):
+        """
+        Load a stored model from :code:`path`.
+
+        Arguments:
+
+            path(:code:`str`): Path of the CloudNet model  to load.
+
+        """
         filename = os.path.basename(path)
         name = os.path.splitext(filename)[0]
         dirname = os.path.dirname(path)
@@ -107,6 +123,19 @@ class CloudNetBase:
         return cn
 
     def save(self, path):
+        """
+        Save model to the given path.
+
+        Since keras models cannot be pickled, :code:`CloudNet` objects are
+        saved in two different files:
+
+        1. A pickle file containing the `CloudNet` object is saved at
+            :code:`path`.
+
+        2. The :code:`CloudNet` objects keras model is saved in the
+            same folder as the pickle file but with its filename suffixed
+            with :code:`_keras_model`.
+        """
         f = open(path, "wb")
         filename = os.path.basename(path)
         name = os.path.splitext(filename)[0]
@@ -120,15 +149,64 @@ class CloudNetBase:
         f.close()
         self.model = model
 
-
-
+#
+# CloudNet Simple
+#
 
 class CloudNetSimple(CloudNetBase):
-    def __init__(self, dn,
-                 layers = 4, kw = 3, filters = 32, filters_max = 128,
-                 dense_layers = 2, dense_width = 128,
-                 dense_activation = "relu", **kwargs):
+    """
+    The :code:`CloudNetSimple` class provides a utility class for the building
+    and training of CNNs for cloud retrievals.
 
+    A cloud net has the typical structure of a simple convolutional neural
+    networks:
+
+        1. The first part of the network consists of convolutional layers. Each
+            of them followed by a batch normalization layer and a max-pooling layer
+            (if the layer's input size permits).
+
+        2. The second part of the network consists of a number of dense layers
+           followed by a single output neuron to predict the retrieval variable.
+
+    Note that the number of channels that the cloud net uses is currently fixed
+    to two!
+
+    """
+    def __init__(self, dn,
+                 layers = 4,
+                 kw = 3,
+                 filters = 32,
+                 filters_max = 128,
+                 dense_layers = 2,
+                 dense_width = 128,
+                 dense_activation = "relu",
+                 **kwargs):
+        """
+        Create a cloud net.
+
+        Arguments:
+
+            dn(int): Extent of the input neighborhood excluding the center pixel,
+                i.e. :code:`input_width = 2 * dn + 1`.
+
+            layers(int): Convolutional layers of the network. Each v
+
+            kw(int): Width of the convolutional kernels.
+
+            filters(int): Number of filters on the first convolutional layer.
+                The number of filters is doubled after each convolutional layer.
+
+            filters_max(int): Number up to which the number of filters of the
+                convolutional layers is increased.
+
+            dense_layers(int): Numbers of dense layers following the convolutional
+                part.
+
+            dense_width(int): Number of neurons in the dense layers.
+
+            **kwargs: Additional keywords are passed to the keras :code:`Conv2D`
+                constructor.
+        """
         self.dn = dn
         self.channels = [4, 5]
 
@@ -180,6 +258,18 @@ class CloudNetSimple(CloudNetBase):
 
 
     def fit(self, x, y):
+        """
+        Fit the cloud net to data.
+
+        Arguments:
+
+            x(numpy.ndarray): Numpy array containing the training data in the form of
+                a 4-dimensional tensor with samples along first and channels along
+                second axis.
+
+            y(numpy.ndarray): Numpy array containing the scalar training data with
+                samples along the first axis and the data along the second.
+        """
 
         logger = CSVLogger("logs/train_log_{0}_{1}.csv".format(self.dn, id(self)), append = True)
 
@@ -224,6 +314,10 @@ class CloudNetSimple(CloudNetBase):
                        validation_data = [x_val, y_val], callbacks = [lr_callback, logger])
 
 class CloudNet:
+    """
+    The CloudNet class is an experimental class for complex output,
+    but is not functional at the moment.
+    """
     def __init__(self, dn, channels, kw = 3, layers = 2):
 
         self.channels = channels
@@ -321,7 +415,7 @@ class FeatureModel:
         for l in model.layers:
 
             if type(l) == Conv2D:
-                inds -= (l.kernel_size // 2 - 1) * pixel_width
+                inds -= (l.kernel_size // 2) * pixel_width
 
             if type(l) == MaxPooling2D:
                 inds = inds // 2
@@ -329,6 +423,29 @@ class FeatureModel:
 
         return inds
 
+    def resample_coordinates(self, coords):
+        """
+        Resample coordinate array so that it matches with filter response array.
+
+        Arguments:
+
+            coords(numpy.array): Coordinate array to resample.
+
+        """
+
+        for l in self.model.layers:
+
+            m, n = coords.shape
+
+            if type(l) == Conv2D:
+                dp = (l.kernel_size[0] // 2)
+                coords = coords[dp : m - dp, dp : n - dp]
+
+            if type(l) == MaxPooling2D:
+                coords = sp.signal.convolve2d(coords, np.ones((2, 2)) / 4.0, "valid")
+                coords = coords[::2, ::2]
+
+        return coords
 
     def _make_feature_model(self,
                             model,
@@ -358,10 +475,11 @@ class FeatureModel:
         il = model.layers[0]
 
         fm.add(Conv2D(filters = il.filters,
-                    activation = il.activation,
-                    kernel_size = il.kernel_size,
-                    padding = il.padding,
-                    input_shape = input_shape))
+                      activation = il.activation,
+                      kernel_size = il.kernel_size,
+                      data_format = il.data_format,
+                      padding = il.padding,
+                      input_shape = input_shape))
         fm.layers[-1].set_weights(il.get_weights())
 
 
@@ -413,6 +531,3 @@ class FeatureModel:
                       .format(self.n_channels, data.shape[0]))
 
         return self.model.predict((data - self.x_mean) / self.x_sigma)
-
-
-

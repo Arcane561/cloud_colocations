@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import cartopy.crs as ccrs
 
 from matplotlib.colors import Normalize
 
@@ -25,10 +26,15 @@ def grid_to_edges(grid):
 
     return new_grid
 
-def plot_composite(modis_data, i, bands = [1, 4, 3], ax = None):
+def plot_composite(modis_data, i, bands = [1, 4, 3], figure = None, subplot = (1,)):
+
 
     if ax is None:
         ax = plt.gca()
+
+    lats = modis_data["lats"][i, :, :]
+    lons = modis_data["lons"][i, :, :]
+
 
     x = np.zeros(modis_data["band_1"].shape[1:] + (3,))
 
@@ -59,9 +65,24 @@ def plot_composite(modis_data, i, bands = [1, 4, 3], ax = None):
 
 def plot_modis_granule_composite(modis_file,
                                  modis_geo_file,
-                                 bands = [1, 4, 3], ax = None):
-    if ax is None:
-        ax = plt.gca()
+                                 bands = [1, 4, 3],
+                                 figure = None,
+                                 grid_spec = None):
+    if grid_spec is None:
+        ax = plt.subplot(1, 1, 1)
+    else:
+        ax = plt.subplot(grid_spec, projection = ccrs.PlateCarree())
+
+    lats = modis_geo_file.get_latitudes()
+    lons = modis_geo_file.get_longitudes()
+
+    lon_min = np.min(lons)
+    lon_max = np.max(lons)
+    lat_min = np.min(lats)
+    lat_max = np.max(lats)
+
+    print([lon_min, lat_min, lon_max, lat_max])
+    #ax.set_extent([lon_min, lat_min, lon_max, lat_max], crs=ccrs.PlateCarree())
 
     x  = modis_file.data[bands, :, :]
     xx = np.zeros(modis_file.data.shape[1:] + (3,))
@@ -71,21 +92,61 @@ def plot_modis_granule_composite(modis_file,
         x_min = np.nanmin(x[j, :, :])
         xx[:, :, j] = (x[j, :, :] - x_min) / (x_max - x_min)
 
-    lats = modis_geo_file.get_latitudes()
-    lons = modis_geo_file.get_longitudes()
-
     lat_grid = grid_to_edges(lats)
     lon_grid = grid_to_edges(lons)
 
     cs = np.ones((lats.size, 3))
     for j in range(3):
         cs[:, j] = xx[:, :, j].ravel()
-    print(cs[0, :])
 
     m = np.tile(np.arange(x.shape[0]), (x.shape[1],1))
     m = np.ones(x[:, :, 0].shape)
     img = ax.pcolormesh(lon_grid, lat_grid, xx[:, :, 0], facecolors = cs, edgecolor = None)
     img.set_array(None)
+
+    ax.coastlines(lw = 1, color = "black", resolution = "110m")
+
+    ax.spines['right'].set_visible(True)
+    ax.spines['left'].set_visible(True)
+    ax.spines['bottom'].set_visible(True)
+    ax.spines['top'].set_visible(True)
+
+    ax.spines['right'].set_color("grey")
+    ax.spines['left'].set_color("grey")
+    ax.spines['bottom'].set_color("grey")
+    ax.spines['top'].set_color("grey")
+
+    return img
+
+def plot_scalar_field(x, lats, lons, figure = None,
+                      norm = None,
+                      grid_spec = None):
+
+    if grid_spec is None:
+        ax = plt.subplot(1, 1, 1)
+    else:
+        ax = plt.subplot(grid_spec, projection = ccrs.PlateCarree())
+
+
+    if norm is None:
+        norm = Normalize()
+
+    lat_grid = grid_to_edges(lats)
+    lon_grid = grid_to_edges(lons)
+
+    img = ax.pcolormesh(lon_grid, lat_grid, x, edgecolor = None, norm = norm)
+
+    ax.coastlines(lw = 1, color = "black", resolution = "110m")
+
+    ax.spines['right'].set_visible(True)
+    ax.spines['left'].set_visible(True)
+    ax.spines['bottom'].set_visible(True)
+    ax.spines['top'].set_visible(True)
+
+    ax.spines['right'].set_color("grey")
+    ax.spines['left'].set_color("grey")
+    ax.spines['bottom'].set_color("grey")
+    ax.spines['top'].set_color("grey")
 
     return img
 
