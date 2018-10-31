@@ -500,7 +500,8 @@ class FeatureModel:
                 fm.add(BatchNormalization(axis = l.axis))
 
             if type(l) == MaxPooling2D:
-                fm.add(MaxPooling2D(pool_size = l.pool_size))
+                fm.add(MaxPooling2D(pool_size = l.pool_size,
+                                    data_format = l.data_format))
 
         for l1, l2 in zip(fm.layers, model.layers):
             if not type(l1) == MaxPooling2D:
