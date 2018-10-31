@@ -2,10 +2,16 @@
 The :code:`formats` module provides classes to simplify the handling
 of the file formats of the different data products.
 """
+
 import numpy as np
+
 from pyhdf.SD import SD, SDC
 
 from cloud_collocations.products import file_cache, caliop, modis, modis_geo
+
+################################################################################
+# IcareFile
+################################################################################
 
 class IcareFile:
     """
@@ -49,6 +55,10 @@ class IcareFile:
             objs += [cls(path)]
         return objs
 
+################################################################################
+# Hdf4File
+################################################################################
+
 class Hdf4File:
     """
     Base class for file formats using HDF4File format. The :class:`Hdf4File`
@@ -68,48 +78,177 @@ class Hdf4File:
     def __del__(self):
         self.file_handle.end()
 
-class Caliop01kmclay(Hdf4File, IcareFile):
+################################################################################
+# Caliop01kmclay
+################################################################################
 
-#    @classmethod
-#    def get_by_date(cls, t):
-#        filename = caliop.get_file_by_date(t)
-#        path = caliop.download_file(filename)
-#        return Caliop01kmclay(path)
+class Caliop01kmclay(Hdf4File, IcareFile):
 
     product = caliop
 
     """
     The CALIOP 1 km cloud layer data format.
+
+    This class provide a high-level interface that wraps around the HDF
+    file and provides simplified access to the data that is extracted
+    for the collocations.
     """
     def __init__(self, filename):
+        """
+        Create :code:`Caliop01kmclay` object from file.
+
+        Arguments:
+
+            filename(str): Path to the file to read.
+
+        """
         super().__init__(filename)
 
         self.profile_times = self.file_handle.select('Profile_Time')[:].ravel()
 
-    def get_latitudes(self):
-        return self.file_handle.select('Latitude')[:]
 
-    def get_longitudes(self):
-        return self.file_handle.select('Longitude')[:]
+    def get_latitudes(self, c_i = -1, dn = 0):
+        """
+        Get latitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.file_handle.select('Latitude')[:]
+        else:
+            return self.file_handle.select('Latitude')[c_i - dn : c_i + dn + 1]
 
-    def get_top_altitude(self, c_i, dn):
-        return self.file_handle.select('Layer_Top_Altitude')[c_i - dn : c_i + dn + 1, :4]
-    def get_base_altitude(self, c_i, dn):
-        return self.file_handle.select('Layer_Base_Altitude')[c_i - dn : c_i + dn + 1, :4]
-    def get_top_pressure(self, c_i, dn):
-        return self.file_handle.select('Layer_Top_Pressure')[c_i - dn : c_i + dn + 1, :4]
-    def get_base_pressure(self, c_i, dn):
-        return self.file_handle.select('Layer_Base_Pressure')[c_i - dn : c_i + dn + 1,:4]
+    def get_longitudes(self, c_i = -1, dn = 0):
+        """
+        Get longitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.file_handle.select('Longitude')[:]
+        else:
+            return self.file_handle.select('Longitude')[c_i - dn : c_i + dn + 1]
 
-    def get_utc_times(self):
-        return self.file_handle.select('Profile_UTC_Time')[:]
+    def get_cloud_top_height(self, c_i = -1, dn = 0):
+        """
+        Get altitude of topmost layer as :code:`numpy.ndarray`. By default
+        this function will return the top altitudes for the first detected
+        layer for all profiles. However, if c_i and dn are give, it will
+        return only the profiles in the region containing the :code:`2 * dn + 1`
+        profiles centered around :code:`c_i`.
 
-    def get_profile_times(self):
-        return self.file_handle.select('Profile_Time')[:]
+        Arguments:
+
+            c_i(int): Profile index of collocation center.
+
+            dn(int): Half extent of the region to extract.
+
+        """
+        if c_i < 0:
+            return self.file_handle.select('Layer_Top_Altitude')[:, 0]
+        else:
+            return self.file_handle.select('Layer_Top_Altitude')\
+                [c_i - dn : c_i + dn + 1, 0]
+
+    def get_feature_class(self, c_i = -1, dn = 0):
+        """
+        Return classification flag for uppermost detected layer.
+
+        Arguments:
+
+            c_i(int): Profile index of collocation center.
+
+            dn(int): Half extent of the region to extract.
+        """
+        if c_i < 0:
+            classes = self.file_handle.select('Feature_Classification_Flags')[:, 0] % 8
+        else:
+            classes = self.file_handle.select('Feature_Classification_Flags')\
+                [c_i - dn : c_i + dn + 1, 0] % 8
+        return classes
+
+    def get_cloud_class(self, c_i = -1, dn = 0):
+        """
+        Return classification flag for uppermost detected layer.
+
+        Arguments:
+
+            c_i(int): Profile index of collocation center.
+
+            dn(int): Half extent of the region to extract.
+        """
+        if c_i < 0:
+            classes = self.file_handle.select('Feature_Classification_Flags')[:, 0]
+        else:
+            classes = self.file_handle.select('Feature_Classification_Flags') \
+                [c_i - dn : c_i + dn + 1, 0]
+        return classes
+
+        cloud_types = np.zeros(classes.shape)
+        inds = classes == 2
+        cloud_types[inds] = (classes // 1024) % 8
+        return cloud_types
+
+    def get_feature_class_quality(self, c_i = -1, dn = 0):
+        """
+        Return classification flag for uppermost detected layer.
+
+        Arguments:
+
+            c_i(int): Profile index of collocation center.
+
+            dn(int): Half extent of the region to extract.
+        """
+        if c_i < 0:
+            classes = self.file_handle.select('Feature_Classification_Flags')[:, 0]
+        else:
+            classes = self.file_handle.select('Feature_Classification_Flags') \
+                [c_i - dn : c_i + dn + 1, 0]
+        return (classes // 8) % 4
+
+    def get_cloud_top_pressure(self, c_i = -1, dn = 0):
+        """
+        Get pressure of topmost layer as :code:`numpy.ndarray`. By default
+        this function will return the top pressure for the first detected
+        layer for all profiles. However, if c_i and dn are give, it will
+        return only the profiles in the region containing the :code:`2 * dn + 1`
+        profiles centered around :code:`c_i`.
+
+        Arguments:
+
+            c_i(int): Profile index of collocation center.
+
+            dn(int): Half extent of the region to extract.
+
+        """
+        if c_i < 0:
+            return self.file_handle.select('Layer_Top_Pressure')[:, 0]
+        else:
+            return self.file_handle.select('Layer_Top_Pressure')[c_i - dn : c_i + dn + 1, 0]
+
+
+    def get_utc_time(self, c_i = -1, dn = 0):
+        """
+        Returns the UTC times for all profiles in the file as numpy array.
+        """
+        if c_i < 0:
+            return self.file_handle.select('Profile_UTC_Time')[:]
+        else:
+            return self.file_handle.select('Profile_UTC_Time')[c_i - dn : c_i + dn + 1]
+
+
+    def get_profile_times(self, c_i = -1, dn = 0):
+        """
+        Returns the profile times for all profiles in the file as numpy array.
+        """
+        if c_i < 0 or dn < 0:
+            return self.file_handle.select('Profile_Time')[:]
+        else:
+            return self.file_handle.select('Profile_Time')[c_i - dn : c_i + dn + 1]
 
     def get_profile_id(self, c_i, dn):
         return self.file_handle.select('Profile_ID')[c_i - dn : c_i + dn + 1]
 
+
+################################################################################
+# Caliop01kmclay
+################################################################################
 
 class ModisMyd03(Hdf4File, IcareFile):
     """

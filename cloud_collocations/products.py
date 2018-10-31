@@ -219,7 +219,7 @@ class IcareProduct:
         else:
             return files[i + 1]
 
-    def get_files_in_range(self, t0, t1):
+    def get_files_in_range(self, t0, t1, t0_inclusive = False):
         """
         Get all files within time range.
 
@@ -230,7 +230,11 @@ class IcareProduct:
 
             t0(datetime.datetime): Start time of the time range
 
-            t0(datetime.datetime): End time of the time range
+            t1(datetime.datetime): End time of the time range
+
+            t0_inclusive(bool): Whether or not the list should start with
+                the first file containing t0 (True) or the first file found
+                with start time later than t0 (False).
 
         Returns:
 
@@ -262,8 +266,9 @@ class IcareProduct:
 
             t += dt
 
-        f_p = self.get_preceeding_file(files[0])
-        files = [f_p] + files
+        if t0_inclusive:
+            f_p = self.get_preceeding_file(files[0])
+            files = [f_p] + files
 
         if not pos1[-1]:
             files += [self.get_following_file(files[-1])]

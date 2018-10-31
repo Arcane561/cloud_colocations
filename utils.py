@@ -11,7 +11,6 @@ def ensure_extension(name, ext):
         return name
 
 def grid_to_edges_2d(grid):
-
     new_grid = np.zeros((grid.shape[0]+ 1, grid.shape[1] + 1))
     new_grid[1:-1, 1:-1] = 0.25 * (grid[1:, 1:] + grid[1:, :-1] +
                                    grid[:-1, 1:] + grid[:-1, :-1])
