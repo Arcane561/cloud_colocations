@@ -492,6 +492,7 @@ class FeatureModel:
                 fm.add(Conv2D(filters = l.filters,
                             activation = l.activation,
                             kernel_size = l.kernel_size,
+                            data_format = il.data_format,
                             padding = l.padding,
                             input_shape = l.input_shape))
 
