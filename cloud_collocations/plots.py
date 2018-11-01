@@ -54,7 +54,6 @@ def plot_composite(modis_data, i, bands = [1, 4, 3], figure = None, subplot = (1
     cs = np.ones((lats.size, 3))
     for j in range(3):
         cs[:, j] = x[:, :, j].ravel()
-    print(cs[0, :])
 
     m = np.tile(np.arange(x.shape[0]), (x.shape[1],1))
     m = np.ones(x[:, :, 0].shape)
@@ -80,9 +79,6 @@ def plot_modis_granule_composite(modis_file,
     lon_max = np.max(lons)
     lat_min = np.min(lats)
     lat_max = np.max(lats)
-
-    print([lon_min, lat_min, lon_max, lat_max])
-    #ax.set_extent([lon_min, lat_min, lon_max, lat_max], crs=ccrs.PlateCarree())
 
     x  = modis_file.data[bands, :, :]
     xx = np.zeros(modis_file.data.shape[1:] + (3,))
