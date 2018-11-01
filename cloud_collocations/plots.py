@@ -4,6 +4,14 @@ import cartopy.crs as ccrs
 
 from matplotlib.colors import Normalize
 
+#
+# Ugly path for matplotlib 3.0.0
+#
+
+from matplotlib.axes import Axes
+from cartopy.mpl.geoaxes import GeoAxes
+GeoAxes._pcolormesh_patched = Axes.pcolormesh
+
 def grid_to_edges(grid):
     new_grid = np.zeros((grid.shape[0]+ 1, grid.shape[1] + 1))
     new_grid[1:-1, 1:-1] = 0.25 * (grid[1:, 1:] + grid[1:, :-1] +
