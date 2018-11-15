@@ -3,6 +3,8 @@ The :code:`collocations` module contains high-level abstractions for the
 extraction of A-train collocations.
 """
 import numpy as np
+import scipy as sp
+import scipy.signal
 import os
 import shutil
 import tempfile
@@ -14,7 +16,6 @@ from cloud_collocations.utils   import caliop_tai_to_datetime
 from cloud_collocations         import products
 from cloud_collocations.formats import Caliop01kmclay, ModisMyd021km, ModisMyd03
 
-products.file_cache = products.FileCache("/home/simonpf/cache")
 
 ################################################################################
 # ModisOutputFile
@@ -106,6 +107,51 @@ class ModisOutputFile:
                         modis_geo_file.lats[i_start : i_end, j_start : j_end]
         self.lons[self.collocation_index, :, :] = \
                         modis_geo_file.lons[i_start : i_end, j_start : j_end]
+
+        self.collocation_index += 1
+
+class ModisSubsampledOutputFile(ModisOutputFile):
+    """
+    Outputfile that stores subsampled modis data.
+    """
+    def __init__(self, filename, dn, sampling_factor, overwrite = False):
+        super().__init__(filename, dn, overwrite = overwrite)
+        self.sf = sampling_factor
+
+    def block_average(self, data):
+        k = np.ones((self.sf, self.sf)) / self.sf ** 2
+        data = sp.signal.convolve2d(data, k, mode = "valid")[::self.sf, ::self.sf]
+        return data
+
+    def add_collocation(self, i, j, modis_file, modis_geo_file):
+        data = modis_file.data
+        _, m, n = data.shape
+
+
+        i_start = i - (self.dn + 0) * self.sf
+        i_end   = i + (self.dn + 1) * self.sf
+        j_start = j - (self.dn + 0) * self.sf
+        j_end   = j + (self.dn + 1) * self.sf
+
+        if i_start < 0 or i_end >= m or j_start < 0 or j_end >= n:
+            print("Subsampled collocation out of bounds: [{0} : {1}, {2}, {3}]"
+                  .format(i_start, i_end, j_start, j_end))
+            raise Exception("Collocation out of bounds of MODIS file.")
+
+        for i in range(38):
+            if i_start >= 0 and i_end < m \
+               and j_start >= 0 and j_end < n:
+                data_ss = self.block_average(data[i, i_start : i_end, j_start : j_end])
+                self.bands[i][self.collocation_index, :, :] = data_ss
+            else:
+                self.bands[i][self.collocation_index, :, :] = np.nan
+
+        self.lats[self.collocation_index, :, :] = \
+                        modis_geo_file.lats[i_start : i_end : self.sf,
+                                            j_start : j_end : self.sf]
+        self.lons[self.collocation_index, :, :] = \
+                        modis_geo_file.lons[i_start : i_end : self.sf,
+                                            j_start : j_end : self.sf]
 
         self.collocation_index += 1
 
@@ -260,6 +306,8 @@ class MetaOutputFile:
         self.lon[self.collocation_index]  = caliop_file.get_longitudes(i)
         self.d[self.collocation_index]    = d
 
+        self.collocation_index += 1
+
 ################################################################################
 # Collocation
 ################################################################################
@@ -329,8 +377,20 @@ class Collocation:
         filename = os.path.join(path, "modis_{0}.nc".format(self.dn))
         self.modis_output = ModisOutputFile(filename, self.dn, overwrite)
 
+        filename = os.path.join(path, "modis_ss_5_{0}.nc".format(self.dn))
+        self.modis_ss_5_output = ModisSubsampledOutputFile(filename, self.dn, 5, overwrite)
+
+        filename = os.path.join(path, "modis_ss_11_{0}.nc".format(self.dn))
+        self.modis_ss_11_output = ModisSubsampledOutputFile(filename, self.dn, 11, overwrite)
+
         filename = os.path.join(path, "caliop_{0}.nc".format(self.dn))
         self.caliop_output = CaliopOutputFile(filename, self.dn, overwrite)
+
+        filename = os.path.join(path, "caliop_ss_5_{0}.nc".format(self.dn))
+        self.caliop_ss_5_output = CaliopOutputFile(filename, self.dn * 5, overwrite)
+
+        filename = os.path.join(path, "caliop_ss_11_{0}.nc".format(self.dn))
+        self.caliop_ss_11_output = CaliopOutputFile(filename, self.dn * 11, overwrite)
 
         filename = os.path.join(path, "meta_{0}.nc".format(self.dn))
         self.meta_output = MetaOutputFile(filename, self.dn, overwrite)
@@ -411,13 +471,23 @@ class Collocation:
         modis_file = self.modis_files[modis_file_index]
         modis_geo_file = self.modis_geo_files[modis_file_index]
 
+        #try:
+        #    self.modis_output.add_collocation(modis_i, modis_j, modis_file, modis_geo_file)
+        #    self.modis_ss_5_output.add_collocation(modis_i, modis_j, modis_file, modis_geo_file)
+        #    self.modis_ss_11_output.add_collocation(modis_i, modis_j, modis_file, modis_geo_file)
+        #except:
+        #    return None
         try:
+            self.modis_ss_11_output.add_collocation(modis_i, modis_j, modis_file, modis_geo_file)
+            self.modis_ss_5_output.add_collocation(modis_i, modis_j, modis_file, modis_geo_file)
             self.modis_output.add_collocation(modis_i, modis_j, modis_file, modis_geo_file)
         except:
             return None
 
         # Caliop output.
         self.caliop_output.add_collocation(profile_index, self.caliop_file)
+        self.caliop_ss_5_output.add_collocation(profile_index, self.caliop_file)
+        self.caliop_ss_11_output.add_collocation(profile_index, self.caliop_file)
 
         # Meta data.
         self.meta_output.add_collocation(profile_index, self.caliop_file, d)
@@ -450,13 +520,18 @@ class ProcessDay:
                  year,
                  day,
                  path,
-                 dn = 50):
+                 dn = 20,
+                 cache = None):
+
         self.day  = day
         self.year = year
         self.dn   = dn
 
         # Create output tree.
-        self.cache = tempfile.mkdtemp()
+        if cache is None:
+            self.cache = tempfile.mkdtemp()
+        else:
+            self.cache = cache
 
         day_str = str(self.day)
         day_str = "0" * (3 - len(day_str)) + day_str
@@ -471,7 +546,8 @@ class ProcessDay:
 
         # Set file cache.
         products.file_cache = products.FileCache(self.cache)
-        products.file_cache.temp = True
+        if cache is None:
+            products.file_cache.temp = True
 
 
     def run(self):
@@ -498,12 +574,12 @@ class ProcessDay:
             colls.create_output_files(True)
             lats_caliop = cf.get_latitudes()
 
-            i = self.dn
-            while i < lats_caliop.size - self.dn:
+            i = self.dn * 11
+            while i < lats_caliop.size - self.dn * 11:
                 j, k, l, d = colls.get_collocation(i)
 
                 if d < 1.0:
                     colls.add_collocation(i, j, k, l, d)
-                i += self.dn
+                i += 2 * self.dn
 
             print("Finished processing " + cf.filename)

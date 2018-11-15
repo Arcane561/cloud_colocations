@@ -70,6 +70,13 @@ class FileCache:
         else:
             None
 
+    def set_path(self, path):
+        self.path = path
+
+        if self.temp:
+            shutil.rmtree(self.path)
+        self.temp = False
+
     def __del__(self):
         if self.temp:
             shutil.rmtree(self.path)

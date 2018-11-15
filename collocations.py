@@ -3,7 +3,7 @@
 Contains code that manages the extraction of collocations from
 Caliop and Modis files.
 """
-from formats import Caliop01kmclay, ModisMyd03, ModisMyd021km
+from cloud_collocations.formats import Caliop01kmclay, ModisMyd03, ModisMyd021km
 from netCDF4 import Dataset
 
 import geopy.distance

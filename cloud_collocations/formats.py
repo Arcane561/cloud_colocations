@@ -178,11 +178,10 @@ class Caliop01kmclay(Hdf4File, IcareFile):
         else:
             classes = self.file_handle.select('Feature_Classification_Flags') \
                 [c_i - dn : c_i + dn + 1, 0]
-        return classes
 
         cloud_types = np.zeros(classes.shape)
-        inds = classes == 2
-        cloud_types[inds] = (classes // 1024) % 8
+        inds = (classes % 8) == 2
+        cloud_types[inds] = (classes[inds] // 1024) % 8
         return cloud_types
 
     def get_feature_class_quality(self, c_i = -1, dn = 0):
