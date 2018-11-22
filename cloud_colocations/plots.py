@@ -77,7 +77,8 @@ def plot_modis_granule_composite(modis_file,
                                  modis_geo_file,
                                  bands = [1, 4, 3],
                                  figure = None,
-                                 grid_spec = None):
+                                 grid_spec = None,
+                                 gain = 0.0):
     if grid_spec is None:
         ax = plt.subplot(1, 1, 1, projection = ccrs.PlateCarree())
     else:
@@ -96,8 +97,9 @@ def plot_modis_granule_composite(modis_file,
 
     for j in range(len(bands)):
         x_max = np.nanmax(x[j, :, :])
+        x_max -= gain * x_max
         x_min = np.nanmin(x[j, :, :])
-        xx[:, :, j] = (x[j, :, :] - x_min) / (x_max - x_min)
+        xx[:, :, j] = np.minimum((x[j, :, :] - x_min) / (x_max - x_min), 1.0)
 
     x = exposure.adjust_gamma(x, 0.01)
 

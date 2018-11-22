@@ -21,6 +21,8 @@ from copy import copy
 import os
 import pickle
 
+log_path = "../log"
+
 ################################################################################
 # Custom loss functions
 ################################################################################
@@ -363,10 +365,10 @@ class CloudNetDetection(CloudNetBase):
 
         if layers > 0:
             self.model.add(Flatten())
-            self.model.add(Dropout(rate = 0.2))
+            #self.model.add(Dropout(rate = 0.2))
         else:
             self.model.add(Flatten(input_shape = (n_channels, n, n)))
-            self.model.add(Dropout(rate = 0.2))
+            #self.model.add(Dropout(rate = 0.2))
 
         for i in range(dense_layers):
             self.model.add(Dense(dense_width, activation = dense_activation))
@@ -377,7 +379,9 @@ class CloudNetDetection(CloudNetBase):
 
 
     def fit(self, x, y):
-        logger = CSVLogger("../logs/train_log_{0}_{1}.csv".format(self.dn, id(self)), append = True)
+        logger = CSVLogger(os.path.join(log_path,
+                                        "train_log_{0}_{1}.csv".format(self.dn, id(self))),
+                           append = True)
 
         n0 = (x.shape[-1] - 1) // 2
         dn = self.dn
@@ -411,14 +415,14 @@ class CloudNetDetection(CloudNetBase):
         lr_callback = LRDecay(self.model, 2.0, 1e-4, 1)
         self.model.compile(loss = "binary_crossentropy",
                            metrics = ["accuracy"],
-                           optimizer = Adam(lr = 0.001)) #SGD(lr = 0.001, momentum = 0.9, decay = 0.00001))
+                           optimizer = Adam(lr = 0.1)) #SGD(lr = 0.001, momentum = 0.9, decay = 0.00001))
 
         #self.model.fit_generator(datagen.flow(x_train, y_train, batch_size = 64),
         #                         steps_per_epoch = n_train // 64, epochs = 100,
         #                         validation_data = [x_val, y_val],
         #                         callbacks = [lr_callback, logger])
 
-        self.model.fit(x = x_train, y = y_train, batch_size = 32, epochs = 3,
+        self.model.fit(x = x_train, y = y_train, batch_size = 128, epochs = 100,
                        validation_data = [x_val, y_val], callbacks = [lr_callback, logger])
 class CloudNet:
     """
