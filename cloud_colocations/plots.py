@@ -99,7 +99,7 @@ def plot_modis_granule_composite(modis_file,
         x_min = np.nanmin(x[j, :, :])
         xx[:, :, j] = (x[j, :, :] - x_min) / (x_max - x_min)
 
-    x = exposure.adjust_log(x)
+    x = exposure.adjust_gamma(x, 0.01)
 
     lat_grid = grid_to_edges(lats)
     lon_grid = grid_to_edges(lons)
