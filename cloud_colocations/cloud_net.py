@@ -313,6 +313,108 @@ class CloudNetSimple(CloudNetBase):
         self.model.fit(x = x_train, y = y_train, batch_size = 256, epochs = 100,
                        validation_data = [x_val, y_val], callbacks = [lr_callback, logger])
 
+class CloudNetDetection(CloudNetBase):
+    def __init__(self, dn,
+                 layers = 4,
+                 kw = 3,
+                 filters = 32,
+                 filters_max = 128,
+                 dense_layers = 2,
+                 dense_width = 128,
+                 dense_activation = "relu",
+                 **kwargs):
+        self.dn = dn
+        self.channels = [4, 5]
+
+        self.model = Sequential()
+
+        n = 2 * dn + 1
+        n_channels = len(self.channels)
+
+        layer_kwargs = {}
+        layer_kwargs["filters"] = filters
+        layer_kwargs["activation"] = "relu"
+        layer_kwargs["kernel_size"] = (kw, kw)
+        layer_kwargs["padding"] = "valid"
+        layer_kwargs["input_shape"] = (n_channels, n, n)
+        layer_kwargs.update(kwargs)
+
+
+        for i in range(layers):
+
+            self.model.add(Conv2D(**layer_kwargs))
+            self.model.add(BatchNormalization(axis = 1))
+            np = (kw // 2) * 2
+            n -= (kw // 2) * 2
+            print(n)
+
+            if (n // 2) > (layers - i) * np:
+                self.model.add(MaxPooling2D(pool_size = (2, 2)))
+                filters *= 2
+                filters = min(filters_max, filters)
+                n = n // 2
+                layer_kwargs["filters"] = filters
+
+            if i == 0:
+                layer_kwargs.pop("input_shape")
+
+        if layers > 0:
+            self.model.add(Flatten())
+            #self.model.add(Dropout(rate = 0.1))
+        else:
+            self.model.add(Flatten(input_shape = (n_channels, n, n)))
+            #self.model.add(Dropout(rate = 0.1))
+
+        for i in range(dense_layers):
+            self.model.add(Dense(dense_width, activation = dense_activation))
+            #if i < dense_layers - 1:
+                #self.model.add(Dropout(rate = 0.1))
+
+        self.model.add(Dense(1, activation = "sigmoid"))
+
+
+    def fit(self, x, y):
+        logger = CSVLogger("logs/train_log_{0}_{1}.csv".format(self.dn, id(self)), append = True)
+
+        n0 = (x.shape[-1] - 1) // 2
+        dn = self.dn
+
+        y = y.reshape(-1, 1)
+
+        x = x[:, self.channels,
+              n0 - dn : n0 + dn + 1,
+              n0 - dn : n0 + dn + 1]
+
+        self.x_mean = x.mean(axis = (0, 2, 3), keepdims = True)
+        self.x_sigma = x.std(axis = (0, 2, 3), keepdims = True)
+
+        x = (x - self.x_mean) / self.x_sigma
+
+        inds = np.random.permutation(x.shape[0])
+        n_train = int(0.9 * x.shape[0])
+        x_train = x[inds[:n_train], :, :, :]
+        y_train = y[inds[:n_train], :]
+        x_val   = x[inds[n_train:], :, :, :]
+        y_val   = y[inds[n_train:], :]
+
+        print(y.shape)
+
+        #
+        # Data generator
+        #
+
+
+        lr_callback = LRDecay(self.model, 2.0, 1e-4, 1)
+        self.model.compile(loss = "binary_crossentropy",
+                           optimizer = Adam(lr = 0.1)) #SGD(lr = 0.001, momentum = 0.9, decay = 0.00001))
+
+        #self.model.fit_generator(datagen.flow(x_train, y_train, batch_size = 64),
+        #                         steps_per_epoch = n_train // 64, epochs = 100,
+        #                         validation_data = [x_val, y_val],
+        #                         callbacks = [lr_callback, logger])
+
+        self.model.fit(x = x_train, y = y_train, batch_size = 256, epochs = 100,
+                       validation_data = [x_val, y_val], callbacks = [lr_callback, logger])
 class CloudNet:
     """
     The CloudNet class is an experimental class for complex output,
