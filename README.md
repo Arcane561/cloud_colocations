@@ -1,2 +1,2 @@
-# cloud_collocations
-A-train cloud collocations.
+# cloud_colocations
+A-train cloud colocations.

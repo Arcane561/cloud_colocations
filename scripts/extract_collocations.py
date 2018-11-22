@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 import sys
-from cloud_collocations.collocations import Collocation, ProcessDay
+from cloud_colocations.colocations import Colocation, ProcessDay
 
 
 day_0 = int(sys.argv[1])
@@ -11,8 +11,8 @@ year = 2009
 
 for day in range(day_0, day_1):
     print("processing day ", day, " ...")
-    colls = ProcessDay(year, day, "/home/simonpf/Dendrite/UserAreas/Simon/cloud_collocations")
-    colls.run()
+    cols = ProcessDay(year, day, "/home/simonpf/Dendrite/UserAreas/Simon/cloud_colocations")
+    cols.run()
 
 
 
