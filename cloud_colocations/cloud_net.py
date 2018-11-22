@@ -271,7 +271,9 @@ class CloudNetSimple(CloudNetBase):
                 samples along the first axis and the data along the second.
         """
 
-        logger = CSVLogger("logs/train_log_{0}_{1}.csv".format(self.dn, id(self)), append = True)
+        logger = CSVLogger(os.path.join(log_path,
+                                        "train_log_{0}_{1}.csv".format(self.dn, id(self))),
+                           append = True))
 
         n0 = (x.shape[-1] - 1) // 2
         dn = self.dn
@@ -340,6 +342,7 @@ class CloudNetDetection(CloudNetBase):
         layer_kwargs.update(kwargs)
 
 
+        print(layer_kwargs)
         for i in range(layers):
 
             self.model.add(Conv2D(**layer_kwargs))
@@ -360,10 +363,10 @@ class CloudNetDetection(CloudNetBase):
 
         if layers > 0:
             self.model.add(Flatten())
-            #self.model.add(Dropout(rate = 0.1))
+            self.model.add(Dropout(rate = 0.2))
         else:
             self.model.add(Flatten(input_shape = (n_channels, n, n)))
-            #self.model.add(Dropout(rate = 0.1))
+            self.model.add(Dropout(rate = 0.2))
 
         for i in range(dense_layers):
             self.model.add(Dense(dense_width, activation = dense_activation))
@@ -374,16 +377,17 @@ class CloudNetDetection(CloudNetBase):
 
 
     def fit(self, x, y):
-        logger = CSVLogger("logs/train_log_{0}_{1}.csv".format(self.dn, id(self)), append = True)
+        logger = CSVLogger("../logs/train_log_{0}_{1}.csv".format(self.dn, id(self)), append = True)
 
         n0 = (x.shape[-1] - 1) // 2
         dn = self.dn
 
         y = y.reshape(-1, 1)
 
-        x = x[:, self.channels,
-              n0 - dn : n0 + dn + 1,
-              n0 - dn : n0 + dn + 1]
+        if not x.shape[1] == 2:
+            x = x[:, self.channels,
+                  n0 - dn : n0 + dn + 1,
+                  n0 - dn : n0 + dn + 1]
 
         self.x_mean = x.mean(axis = (0, 2, 3), keepdims = True)
         self.x_sigma = x.std(axis = (0, 2, 3), keepdims = True)
@@ -406,6 +410,7 @@ class CloudNetDetection(CloudNetBase):
 
         lr_callback = LRDecay(self.model, 2.0, 1e-4, 1)
         self.model.compile(loss = "binary_crossentropy",
+                           metrics = ["accuracy"],
                            optimizer = Adam(lr = 0.1)) #SGD(lr = 0.001, momentum = 0.9, decay = 0.00001))
 
         #self.model.fit_generator(datagen.flow(x_train, y_train, batch_size = 64),
@@ -413,7 +418,7 @@ class CloudNetDetection(CloudNetBase):
         #                         validation_data = [x_val, y_val],
         #                         callbacks = [lr_callback, logger])
 
-        self.model.fit(x = x_train, y = y_train, batch_size = 256, epochs = 100,
+        self.model.fit(x = x_train, y = y_train, batch_size = 128, epochs = 100,
                        validation_data = [x_val, y_val], callbacks = [lr_callback, logger])
 class CloudNet:
     """
