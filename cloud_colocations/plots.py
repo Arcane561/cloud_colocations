@@ -135,7 +135,7 @@ def plot_modis_granule_composite(modis_file,
     #gl.xlabel_style = {'size': 15, 'color': 'gray'}
     #gl.xlabel_style = {'color': 'red', 'weight': 'bold'}
 
-    return ax, img
+    return ax, img, gl
 
 def plot_scalar_field(x, lats, lons, figure = None,
                       norm = None,
@@ -167,7 +167,16 @@ def plot_scalar_field(x, lats, lons, figure = None,
     ax.spines['bottom'].set_color("grey")
     ax.spines['top'].set_color("grey")
 
-    return ax, img
+    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, linewidth = 0)
+    gl.xlabels_top   = False
+    gl.yformatter = LATITUDE_FORMATTER
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.ylabels_right = False
+    gl.ylabels_right = False
+    #gl.xlabel_style = {'size': 15, 'color': 'gray'}
+    #gl.xlabel_style = {'color': 'red', 'weight': 'bold'}
+
+    return ax, img, gl
 
 def plot_swath_cth(caliop_data, i, ax = None):
     if ax is None:

@@ -163,6 +163,14 @@ class Caliop01kmclay(Hdf4File, IcareFile):
                 [c_i - dn : c_i + dn + 1, 0] % 8
         return classes
 
+    def get_feature_class_curtain(self, c_i = -1, dn = 0):
+        if c_i < 0:
+            classes = self.file_handle.select('Feature_Classification_Flags')[:, :] % 8
+        else:
+            classes = self.file_handle.select('Feature_Classification_Flags')\
+                [c_i - dn : c_i + dn + 1, :] % 8
+        return classes
+
     def get_cloud_class(self, c_i = -1, dn = 0):
         """
         Return classification flag for uppermost detected layer.

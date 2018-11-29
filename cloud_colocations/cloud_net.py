@@ -21,7 +21,7 @@ from copy import copy
 import os
 import pickle
 
-log_path = "../log"
+log_path = "../logs"
 
 ################################################################################
 # Custom loss functions
@@ -174,9 +174,13 @@ class CloudNetSimple(CloudNetBase):
     to two!
 
     """
-    def __init__(self, dn,
+    def __init__(self,
+                 dn,
+                 target_type,
+                 n_channels,
                  layers = 4,
                  kw = 3,
+                 dropout = True,
                  filters = 32,
                  filters_max = 128,
                  dense_layers = 2,
@@ -190,6 +194,9 @@ class CloudNetSimple(CloudNetBase):
 
             dn(int): Extent of the input neighborhood excluding the center pixel,
                 i.e. :code:`input_width = 2 * dn + 1`.
+
+            target_type(str): What the network will be trained to do:
+                             "regression" or "classification".
 
             layers(int): Convolutional layers of the network. Each v
 
@@ -209,22 +216,25 @@ class CloudNetSimple(CloudNetBase):
             **kwargs: Additional keywords are passed to the keras :code:`Conv2D`
                 constructor.
         """
-        self.dn = dn
-        self.channels = [4, 5]
+        if not target_type in ["regression", "classification", "detection"]:
+            raise Exception("target_type argument must be one of regression, "
+                            " classification, detection.")
+
+        self.dn          = dn
+        self.target_type = target_type
+        self.n_channels  = n_channels
 
         self.model = Sequential()
 
         n = 2 * dn + 1
-        n_channels = len(self.channels)
 
         layer_kwargs = {}
         layer_kwargs["filters"] = filters
         layer_kwargs["activation"] = "relu"
         layer_kwargs["kernel_size"] = (kw, kw)
         layer_kwargs["padding"] = "valid"
-        layer_kwargs["input_shape"] = (n_channels, n, n)
+        layer_kwargs["input_shape"] = (self.n_channels, n, n)
         layer_kwargs.update(kwargs)
-
 
         for i in range(layers):
 
@@ -246,17 +256,25 @@ class CloudNetSimple(CloudNetBase):
 
         if layers > 0:
             self.model.add(Flatten())
-            #self.model.add(Dropout(rate = 0.1))
+            if dropout:
+                self.model.add(Dropout(rate = 0.1))
         else:
             self.model.add(Flatten(input_shape = (n_channels, n, n)))
-            #self.model.add(Dropout(rate = 0.1))
+            if dropout:
+                self.model.add(Dropout(rate = 0.1))
 
         for i in range(dense_layers):
             self.model.add(Dense(dense_width, activation = dense_activation))
-            #if i < dense_layers - 1:
-                #self.model.add(Dropout(rate = 0.1))
+            if i < dense_layers - 1:
+                if dropout:
+                    self.model.add(Dropout(rate = 0.1))
 
-        self.model.add(Dense(1, activation = None))
+        if self.target_type == "regression":
+            self.model.add(Dense(1, activation = None))
+        elif self.target_type == "detection":
+            self.model.add(Dense(1, activation = "sigmoid"))
+        elif self.target_type == "classification":
+            self.model.add(Dense(1, activation = "softmax"))
 
 
     def fit(self, x, y):
@@ -275,123 +293,12 @@ class CloudNetSimple(CloudNetBase):
 
         logger = CSVLogger(os.path.join(log_path,
                                         "train_log_{0}_{1}.csv".format(self.dn, id(self))),
-                            append = True)
-
-        n0 = (x.shape[-1] - 1) // 2
-        dn = self.dn
-
-        y = y.reshape(-1, 1)
-
-        x = x[:, self.channels,
-              n0 - dn : n0 + dn + 1,
-              n0 - dn : n0 + dn + 1]
-
-        self.x_mean = x.mean(axis = (0, 2, 3), keepdims = True)
-        self.x_sigma = x.std(axis = (0, 2, 3), keepdims = True)
-
-        x = (x - self.x_mean) / self.x_sigma
-
-        inds = np.random.permutation(x.shape[0])
-        n_train = int(0.9 * x.shape[0])
-        x_train = x[inds[:n_train], :, :, :]
-        y_train = y[inds[:n_train], :]
-        x_val   = x[inds[n_train:], :, :, :]
-        y_val   = y[inds[n_train:], :]
-
-        print(y.shape)
-
-        #
-        # Data generator
-        #
-
-
-        lr_callback = LRDecay(self.model, 2.0, 1e-4, 1)
-        self.model.compile(loss = "mean_absolute_error",
-                           optimizer = Adam(lr = 0.1)) #SGD(lr = 0.001, momentum = 0.9, decay = 0.00001))
-
-        #self.model.fit_generator(datagen.flow(x_train, y_train, batch_size = 64),
-        #                         steps_per_epoch = n_train // 64, epochs = 100,
-        #                         validation_data = [x_val, y_val],
-        #                         callbacks = [lr_callback, logger])
-
-        self.model.fit(x = x_train, y = y_train, batch_size = 256, epochs = 100,
-                       validation_data = [x_val, y_val], callbacks = [lr_callback, logger])
-
-class CloudNetDetection(CloudNetBase):
-    def __init__(self, dn,
-                 layers = 4,
-                 kw = 3,
-                 filters = 32,
-                 filters_max = 128,
-                 dense_layers = 2,
-                 dense_width = 128,
-                 dense_activation = "relu",
-                 **kwargs):
-        self.dn = dn
-        self.channels = [4, 5]
-
-        self.model = Sequential()
-
-        n = 2 * dn + 1
-        n_channels = len(self.channels)
-
-        layer_kwargs = {}
-        layer_kwargs["filters"] = filters
-        layer_kwargs["activation"] = "relu"
-        layer_kwargs["kernel_size"] = (kw, kw)
-        layer_kwargs["padding"] = "valid"
-        layer_kwargs["input_shape"] = (n_channels, n, n)
-        layer_kwargs.update(kwargs)
-
-
-        print(layer_kwargs)
-        for i in range(layers):
-
-            self.model.add(Conv2D(**layer_kwargs))
-            self.model.add(BatchNormalization(axis = 1))
-            np = (kw // 2) * 2
-            n -= (kw // 2) * 2
-            print(n)
-
-            if (n // 2) > (layers - i) * np:
-                self.model.add(MaxPooling2D(pool_size = (2, 2)))
-                filters *= 2
-                filters = min(filters_max, filters)
-                n = n // 2
-                layer_kwargs["filters"] = filters
-
-            if i == 0:
-                layer_kwargs.pop("input_shape")
-
-        if layers > 0:
-            self.model.add(Flatten())
-            #self.model.add(Dropout(rate = 0.2))
-        else:
-            self.model.add(Flatten(input_shape = (n_channels, n, n)))
-            #self.model.add(Dropout(rate = 0.2))
-
-        for i in range(dense_layers):
-            self.model.add(Dense(dense_width, activation = dense_activation))
-            #if i < dense_layers - 1:
-                #self.model.add(Dropout(rate = 0.1))
-
-        self.model.add(Dense(1, activation = "sigmoid"))
-
-
-    def fit(self, x, y):
-        logger = CSVLogger(os.path.join(log_path,
-                                        "train_log_{0}_{1}.csv".format(self.dn, id(self))),
                            append = True)
 
         n0 = (x.shape[-1] - 1) // 2
         dn = self.dn
 
-        y = y.reshape(-1, 1)
-
-        if not x.shape[1] == 2:
-            x = x[:, self.channels,
-                  n0 - dn : n0 + dn + 1,
-                  n0 - dn : n0 + dn + 1]
+        x = x[:, :, n0 - dn : n0 + dn + 1, n0 - dn : n0 + dn + 1]
 
         self.x_mean = x.mean(axis = (0, 2, 3), keepdims = True)
         self.x_sigma = x.std(axis = (0, 2, 3), keepdims = True)
@@ -405,25 +312,33 @@ class CloudNetDetection(CloudNetBase):
         x_val   = x[inds[n_train:], :, :, :]
         y_val   = y[inds[n_train:], :]
 
-        print(y.shape)
-
         #
         # Data generator
         #
 
 
+        metrics = []
+
+        if self.target_type == "regression":
+            loss = "mean_absolute_error"
+            metrics += ["mae"]
+        elif self.target_type == "detection":
+            loss = "binary_crossentropy"
+            metrics += ["accuracy"]
+        elif self.target_type == "classification":
+            loss = "crossentropy"
+            metrics += ["accuracy"]
+
+
+
         lr_callback = LRDecay(self.model, 2.0, 1e-4, 1)
-        self.model.compile(loss = "binary_crossentropy",
-                           metrics = ["accuracy"],
-                           optimizer = Adam(lr = 0.1)) #SGD(lr = 0.001, momentum = 0.9, decay = 0.00001))
+        self.model.compile(loss = loss,
+                           metrics = metrics,
+                           optimizer = SGD(lr = 0.01, momentum = 0.9, decay = 0.00001))
 
-        #self.model.fit_generator(datagen.flow(x_train, y_train, batch_size = 64),
-        #                         steps_per_epoch = n_train // 64, epochs = 100,
-        #                         validation_data = [x_val, y_val],
-        #                         callbacks = [lr_callback, logger])
-
-        self.model.fit(x = x_train, y = y_train, batch_size = 128, epochs = 100,
+        self.model.fit(x = x_train, y = y_train, batch_size = 256, epochs = 100,
                        validation_data = [x_val, y_val], callbacks = [lr_callback, logger])
+
 class CloudNet:
     """
     The CloudNet class is an experimental class for complex output,
