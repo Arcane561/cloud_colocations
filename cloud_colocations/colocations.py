@@ -209,13 +209,17 @@ class CaliopOutputFile:
             root = Dataset(filename, mode = "a")
             self.root = root
             self.dims = root.dimensions
-            self.cloud_top_height   = root.variables["cloud_top_height"]
-            self.cloud_top_pressure = root.variables["cloud_top_pressure"]
-            self.feature_class  = root.variables["feature_class"]
-            self.cloud_class    = root.variables["cloud_class"]
+
             self.lats = root.variables["lats"]
             self.lons = root.variables["lons"]
-            self.colocation_index = self.lons.shape[0]
+
+            self.cloud_top_height       = root.variables["cth"]
+            self.cloud_top_pressure     = root.variables["ctp"]
+            self.feature_class          = root.variables["feature_class"]
+            self.feature_class_quality  = root.variables["feature_class"]
+            self.cloud_class            = root.variables["cloud_class"]
+
+            self.colocation_index       = self.lons.shape[0]
 
     def __del__(self):
         if hasattr(self, "root"):
