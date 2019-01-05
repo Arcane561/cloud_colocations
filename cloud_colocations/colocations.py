@@ -15,6 +15,7 @@ from netCDF4  import Dataset
 from cloud_colocations.utils   import caliop_tai_to_datetime
 from cloud_colocations         import products
 from cloud_colocations.formats import Caliop01kmclay, ModisMyd021km, ModisMyd03
+import cloud_colocations.utils as utils
 
 
 ################################################################################
@@ -119,9 +120,7 @@ class ModisSubsampledOutputFile(ModisOutputFile):
         self.sf = sampling_factor
 
     def block_average(self, data):
-        k = np.ones((self.sf, self.sf)) / self.sf ** 2
-        data = sp.signal.convolve2d(data, k, mode = "valid")[::self.sf, ::self.sf]
-        return data
+        return utils.block_average(data, self.sf)
 
     def add_colocation(self, i, j, modis_file, modis_geo_file):
         data = modis_file.data
