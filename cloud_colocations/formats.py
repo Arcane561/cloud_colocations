@@ -8,6 +8,7 @@ import numpy as np
 from pyhdf.SD import SD, SDC
 
 from cloud_colocations.products import file_cache, caliop, modis, modis_geo
+import cloud_colocations.utils as utils
 
 ################################################################################
 # IcareFile
@@ -467,6 +468,10 @@ class ModisMyd021km(Hdf4File, IcareFile):
         if self._data is None:
             self.load_data()
         return self._data
+
+
+    def subsample_data(self, band_index, subsampling_factor):
+        return utils.block_average(self.data[band_index, :, :], subsampling_factor)
 
     def get_input_data(self, c_i, c_j, dn):
         bands = [20, 27, 28, 29, 31, 32, 33]

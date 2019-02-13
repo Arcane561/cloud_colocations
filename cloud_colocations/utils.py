@@ -1,4 +1,8 @@
 from datetime import datetime, timedelta
+import numpy as np
+
+import scipy as sp
+import scipy.signal
 
 def caliop_tai_to_datetime(tai):
     """
@@ -17,3 +21,12 @@ def caliop_tai_to_datetime(tai):
 
     return t0 + dt
 
+def block_average(data, subsampling_factor):
+    """
+    Subsample :code:`data` with a given :code:`subsampling_factor` by computing
+    strided block averages.
+    """
+    sf = subsampling_factor
+    k = np.ones((sf, sf)) / sf ** 2
+    data = sp.signal.convolve2d(data, k, mode = "valid")[::sf, ::sf]
+    return data

@@ -324,7 +324,7 @@ class CloudNetSimple(CloudNetBase):
             metrics += ["mae"]
         elif self.target_type == "detection":
             loss = "binary_crossentropy"
-            metrics += ["accuracy"]
+            metrics += ["mae", "accuracy"]
         elif self.target_type == "classification":
             loss = "crossentropy"
             metrics += ["accuracy"]
