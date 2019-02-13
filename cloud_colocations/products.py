@@ -13,7 +13,7 @@ Atributes:
 from ftplib   import FTP
 from datetime import datetime, timedelta
 import os
-from . import settings
+from cloud_colocations import settings
 import shutil
 import tempfile
 
@@ -139,7 +139,8 @@ class IcareProduct:
         """
         if not path in self.cache:
             with FTP(IcareProduct.base_url) as ftp:
-                ftp.login(user = settings.ftp_user, passwd = settings.ftp_password)
+                ftp.login(user = settings.login["user"],
+                          passwd = settings.login["password"])
                 try:
                     ftp.cwd(path)
                 except:
@@ -352,7 +353,7 @@ class IcareProduct:
             print("Downloading file ", filename)
 
             with FTP(self.base_url) as ftp:
-                ftp.login(user = settings.ftp_user, passwd = settings.ftp_password)
+                ftp.login(user = settings.login['user'], passwd = settings.login['password'])
                 ftp.cwd(path)
                 with open(dest, 'wb') as f:
                     ftp.retrbinary('RETR ' + filename, f.write)
