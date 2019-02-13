@@ -378,6 +378,15 @@ def caliop_name_to_date(s):
     s = s[i + 1 : i + j].replace("-", ".")
     return datetime.strptime(s, "%Y.%m.%dT%H.%M")
 
+def cloudsat_name_to_date(s):
+    """Convert CLOUDSAT name to date"""
+    print(s)
+    s = os.path.basename(s)
+    print(s)
+    s = s.split("_")[0]
+    print(s)
+    return datetime.strptime(s, "%Y%j%H%M%S")
+
 ################################################################################
 # Data products
 ################################################################################
@@ -385,6 +394,7 @@ def caliop_name_to_date(s):
 caliop     = IcareProduct("SPACEBORNE/CALIOP/01kmCLay.v4.10", caliop_name_to_date)
 modis      = IcareProduct("SPACEBORNE/MODIS/MYD021KM", modis_name_to_date)
 modis_geo  = IcareProduct("SPACEBORNE/MODIS/MYD03", modis_name_to_date)
+cloudsat   = IcareProduct("SPACEBORNE/CLOUDSAT/2B-CLDCLASS.v05.06", cloudsat_name_to_date)
 
 #cs = 'CAL_LID_L2_01kmCLay-Standard-V4-10.2010-01-05T00-50-26ZN.hdf'
 #t0 = datetime(2010, 1, 5, 0, 0, 0)

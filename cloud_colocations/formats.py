@@ -5,7 +5,7 @@ of the file formats of the different data products.
 
 import numpy as np
 
-#from pyhdf.SD import SD, SDC
+from pyhdf.SD import SD, SDC
 
 from cloud_colocations.products import file_cache, caliop, modis, modis_geo
 import cloud_colocations.utils as utils
