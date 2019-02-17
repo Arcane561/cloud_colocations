@@ -190,7 +190,7 @@ class Caliop01kmclay(Hdf4File, IcareFile):
 
         cloud_types = np.zeros(classes.shape)
         inds = (classes % 8) == 2
-        cloud_types[inds] = (classes[inds] // 1024) % 8
+        cloud_types[inds] = (classes[inds] // 512) % 8
         return cloud_types
 
     def get_feature_class_quality(self, c_i = -1, dn = 0):
