@@ -254,9 +254,23 @@ class Caliop01kmclay(Hdf4File, IcareFile):
         return self.file_handle.select('Profile_ID')[c_i - dn : c_i + dn + 1]
 
 
+
+
+
+
+
+
+
 ################################################################################
-# Caliop01kmclay
+# MODIS MYD03
 ################################################################################
+
+
+
+
+
+
+
 
 class ModisMyd03(Hdf4File, IcareFile):
     """
@@ -505,3 +519,161 @@ class ModisMyd021km(Hdf4File, IcareFile):
 
             res[i, :, :] = (res[i, :, :] - offset) * scale_factor
         return res
+
+
+
+################################################################################
+# 2B-CLDCLASS-LIDAR    
+################################################################################
+
+
+class 2BCLDCLASS(Hdf4File, IcareFile):
+
+    product = cloudsat
+
+    """
+    The CloudSat cloud layer data format (10 vertical layers in each profile). Cloudlayers are detected based on CPR and CALIOP. 
+
+    This class provide a high-level interface that wraps around the HDF
+    file and provides simplified access to the data that is extracted
+    for the colocations.
+    """
+    def __init__(self, filename):
+        """
+        Create :code:`2B-CLDCLASS-LIDAR` object from file.
+
+        Arguments:
+
+            filename(str): Path to the file to read.
+
+        """
+        super().__init__(filename)
+
+        self.profile_times = self.f['Profile_time'].ravel()
+
+    def get_latitudes(self, c_i = -1, dn = 0):
+        """
+        Get latitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.f['Latitude'][:]
+        else:
+            return self.f['Latitude'][c_i - dn : c_i + dn + 1]
+
+    def get_longitudes(self, c_i = -1, dn = 0):
+        """
+        Get longitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.f['Longitude'][:]
+        else:
+            return self.f['Longitude'][c_i - dn : c_i + dn + 1]
+
+
+
+#################################################### information for upper and lower cloud layer ##############################################
+
+
+    def get_cldtype_low(self, c_i = -1, dn = 0):
+        """
+        Get number of all detected cloud layers as :code:`numpy.ndarray` (max= 10).
+
+        Arguments:
+
+            c_i(int): Profile index of colocation center.
+
+            dn(int): Half extent of the region to extract.
+
+        """
+        if c_i < 0:
+            return self.f['CloudLayerType'][:, 0]
+        else:
+            return self.f['CloudLayerType']\
+                [c_i - dn : c_i + dn + 1, 0]
+
+
+    def get_cldtype_high(self, c_i = -1, dn = 0):
+        """
+        Get number of all detected cloud layers as :code:`numpy.ndarray` (max= 10).
+
+        Arguments:
+
+            c_i(int): Profile index of colocation center.
+
+            dn(int): Half extent of the region to extract.
+
+        """
+        if c_i < 0:
+            return self.f['CloudLayerType'][:, 1]
+        else:
+            return self.f['CloudLayerType']\
+                [c_i - dn : c_i + dn + 1, 0]
+
+
+
+    def get_prec_low(self, c_i = -1, dn = 0):
+        """
+        Get number of all detected cloud layers as :code:`numpy.ndarray` (max= 10).
+
+        Arguments:
+
+            c_i(int): Profile index of colocation center.
+
+            dn(int): Half extent of the region to extract.
+
+        """
+        if c_i < 0:
+            return self.f['PrecipitationFlag'][:, 0]
+        else:
+            return self.f['PrecipitationFlag']\
+                [c_i - dn : c_i + dn + 1, 0]
+
+
+    def get_prec_high(self, c_i = -1, dn = 0):
+        """
+        Get number of all detected cloud layers as :code:`numpy.ndarray` (max= 10).
+
+        Arguments:
+
+            c_i(int): Profile index of colocation center.
+
+            dn(int): Half extent of the region to extract.
+
+        """
+        if c_i < 0:
+            return self.f['PrecipitationFlag'][:, 1]
+        else:
+            return self.f['PrecipitationFlag']\
+                [c_i - dn : c_i + dn + 1, 0]
+
+
+
+################################################################################
+
+
+    def get_profile_times(self, c_i = -1, dn = 0):
+        """
+        Returns the profile times for all profiles in the file as numpy array.
+        """
+        if c_i < 0 or dn < 0:
+            return self.f['Profile_time'][:]
+        else:
+            return self.f['Profile_time'][c_i - dn : c_i + dn + 1]
+
+
+
+    def get_elevation(self, c_i = -1, dn = 0):
+        """
+        Returns the elevation (m ASL) for all profiles in the file as numpy array.
+        """
+        if c_i < 0 or dn < 0:
+            return self.f['DEM_elevation'][:]
+        else:
+            return self.f['DEM_elevation'][c_i - dn : c_i + dn + 1]
+
+
+
+
+
+
+

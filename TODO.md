@@ -1,9 +1,9 @@
 
 # To do for cloud colocations
 
-- file class for 2B-CLDCLASS (to open file with Python)
+- test to open CLDCLASSLIDAR data product and see whether information is correctly extracted (format.py)
 - super class for HDF5 files
-- install pyhdf (Julia)
+
 
 
 
