@@ -337,7 +337,7 @@ class Colocation:
             colls.add_colocation(i, j, k, l, d)
     """
 
-    def __init__(self, dn, caliop_file, result_path):
+    def __init__(self, dn, caliop_file, result_path, subsampling = []):
         """
         Create colocation from a given caliop file.
 
@@ -353,6 +353,7 @@ class Colocation:
         self.dn          = dn
         self.caliop_file = caliop_file
         self.result_path = result_path
+        self.subsampling = subsampling
 
         times   = self.caliop_file.get_profile_times()
 
@@ -380,20 +381,24 @@ class Colocation:
         filename = os.path.join(path, "modis_{0}.nc".format(self.dn))
         self.modis_output = ModisOutputFile(filename, self.dn, overwrite)
 
-        filename = os.path.join(path, "modis_ss_5_{0}.nc".format(self.dn))
-        self.modis_ss_5_output = ModisSubsampledOutputFile(filename, self.dn, 5, overwrite)
+        if 5 in self.subsampling:
+            filename = os.path.join(path, "modis_ss_5_{0}.nc".format(self.dn))
+            self.modis_ss_5_output = ModisSubsampledOutputFile(filename, self.dn, 5, overwrite)
 
-        filename = os.path.join(path, "modis_ss_11_{0}.nc".format(self.dn))
-        self.modis_ss_11_output = ModisSubsampledOutputFile(filename, self.dn, 11, overwrite)
+        if 11 in self.subsampling:
+            filename = os.path.join(path, "modis_ss_11_{0}.nc".format(self.dn))
+            self.modis_ss_11_output = ModisSubsampledOutputFile(filename, self.dn, 11, overwrite)
 
         filename = os.path.join(path, "caliop_{0}.nc".format(self.dn))
         self.caliop_output = CaliopOutputFile(filename, self.dn, overwrite)
 
-        filename = os.path.join(path, "caliop_ss_5_{0}.nc".format(self.dn))
-        self.caliop_ss_5_output = CaliopOutputFile(filename, self.dn * 5, overwrite)
+        if 5 in self.subsampling:
+            filename = os.path.join(path, "caliop_ss_5_{0}.nc".format(self.dn))
+            self.caliop_ss_5_output = CaliopOutputFile(filename, self.dn * 5, overwrite)
 
-        filename = os.path.join(path, "caliop_ss_11_{0}.nc".format(self.dn))
-        self.caliop_ss_11_output = CaliopOutputFile(filename, self.dn * 11, overwrite)
+        if 11 in self.subsampling:
+            filename = os.path.join(path, "caliop_ss_11_{0}.nc".format(self.dn))
+            self.caliop_ss_11_output = CaliopOutputFile(filename, self.dn * 11, overwrite)
 
         filename = os.path.join(path, "meta_{0}.nc".format(self.dn))
         self.meta_output = MetaOutputFile(filename, self.dn, overwrite)
@@ -475,8 +480,12 @@ class Colocation:
         modis_geo_file = self.modis_geo_files[modis_file_index]
 
         try:
-            self.modis_ss_11_output.add_colocation(modis_i, modis_j, modis_file, modis_geo_file)
-            self.modis_ss_5_output.add_colocation(modis_i, modis_j, modis_file, modis_geo_file)
+            if 11 in self.subsampling:
+                self.modis_ss_11_output.add_colocation(modis_i, modis_j,
+                                                       modis_file, modis_geo_file)
+            if 5 in self.subsampling:
+                self.modis_ss_5_output.add_colocation(modis_i, modis_j, modis_file,
+                                                      modis_geo_file)
             self.modis_output.add_colocation(modis_i, modis_j, modis_file, modis_geo_file)
         except Exception as e:
             print("Error adding colocation: ", e)
@@ -484,8 +493,10 @@ class Colocation:
 
         # Caliop output.
         self.caliop_output.add_colocation(profile_index, self.caliop_file)
-        self.caliop_ss_5_output.add_colocation(profile_index, self.caliop_file)
-        self.caliop_ss_11_output.add_colocation(profile_index, self.caliop_file)
+        if 5 in self.subsampling:
+            self.caliop_ss_5_output.add_colocation(profile_index, self.caliop_file)
+        if 11 in self.subsampling:
+            self.caliop_ss_11_output.add_colocation(profile_index, self.caliop_file)
 
         # Meta data.
         self.meta_output.add_colocation(profile_index, self.caliop_file, d)
