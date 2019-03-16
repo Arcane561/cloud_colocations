@@ -7,12 +7,14 @@ import os
 import numpy as np
 
 result_path = "/home/simonpf/src/cloud_colocations/data"
-data_path   = "/home/simonpf/Dendrite/UserAreas/Simon/cloud_collocations"
-dn = 20
+data_path   = "/home/simonpf/Dendrite/UserAreas/Simon/cloud_colocations"
+dn = 100
 
-training_data       = TrainingDataFile(result_path, [30, 31], dn)
-training_data_ss_5  = TrainingDataFile(result_path, [30, 31], dn, ss = 5)
-training_data_ss_11 = TrainingDataFile(result_path, [30, 31], dn, ss = 11)
+training_data       = TrainingDataFile(result_path, [30, 31, 32], dn)
+#training_data_ss_5  = TrainingDataFile(result_path, [30, 31, 32], dn, ss = 5)
+#training_data_ss_11 = TrainingDataFile(result_path, [30, 31, 32], dn, ss = 11)
+training_data_ss_5  = None
+training_data_ss_11 = None
 
 year = 2009
 days = glob.glob(os.path.join(data_path, str(year), "*"))
@@ -30,6 +32,7 @@ for d in days:
 
         band_31 = data.modis_data.variables["band_31"][:, :, :]
         band_32 = data.modis_data.variables["band_32"][:, :, :]
+        band_33 = data.modis_data.variables["band_33"][:, :, :]
         cth = data.caliop_data.variables["cth"][:, :]
         ctp = data.caliop_data.variables["ctp"][:, :]
         cloud_class = data.caliop_data.variables["cloud_class"][:, :]
@@ -38,46 +41,50 @@ for d in days:
 
         for i in range(band_31.shape[0]):
             x = np.stack([band_31[i, :, :],
-                        band_32[i, :, :]])
+                          band_32[i, :, :],
+                          band_33[i, :, :]])
             training_data.add_sample(x, cth[i], ctp[i], cloud_class[i])
 
         #
         # Subsampled 5
         #
 
-        band_31 = data.modis_ss_5_data.variables["band_31"][:, :, :]
-        band_32 = data.modis_ss_5_data.variables["band_32"][:, :, :]
-        cth = data.caliop_ss_5_data.variables["cth"][:, :]
-        ctp = data.caliop_ss_5_data.variables["ctp"][:, :]
-        cloud_class = data.caliop_ss_5_data.variables["cloud_class"][:]
+        if not training_data_ss_5 is None:
+            band_31 = data.modis_ss_5_data.variables["band_31"][:, :, :]
+            band_32 = data.modis_ss_5_data.variables["band_32"][:, :, :]
+            cth = data.caliop_ss_5_data.variables["cth"][:, :]
+            ctp = data.caliop_ss_5_data.variables["ctp"][:, :]
+            cloud_class = data.caliop_ss_5_data.variables["cloud_class"][:]
 
-        for i in range(band_31.shape[0]):
-            x = np.stack([band_31[i, :, :],
-                        band_32[i, :, :]])
-            cth_ = cth[i, 5 * dn]
-            ctp_ = ctp[i, 5 * dn]
-            cloud_class_ = subsample_classes(cloud_class[i, 5 * dn - 5 : 5 * dn + 6])
-            training_data_ss_5.add_sample(x, cth_, ctp_, cloud_class_)
+            for i in range(band_31.shape[0]):
+                x = np.stack([band_31[i, :, :],
+                            band_32[i, :, :]])
+                cth_ = cth[i, 5 * dn]
+                ctp_ = ctp[i, 5 * dn]
+                cloud_class_ = subsample_classes(cloud_class[i, 5 * dn - 5 : 5 * dn + 6])
+                training_data_ss_5.add_sample(x, cth_, ctp_, cloud_class_)
 
         #
         # Subsampled 11
         #
 
-        band_31 = data.modis_ss_11_data.variables["band_31"][:, :, :]
-        band_32 = data.modis_ss_11_data.variables["band_32"][:, :, :]
-        cth = data.caliop_ss_11_data.variables["cth"][:, :]
-        ctp = data.caliop_ss_11_data.variables["ctp"][:, :]
-        cloud_class = data.caliop_ss_11_data.variables["cloud_class"][:]
+        if not training_data_ss_11 is None:
+            band_31 = data.modis_ss_11_data.variables["band_31"][:, :, :]
+            band_32 = data.modis_ss_11_data.variables["band_32"][:, :, :]
+            cth = data.caliop_ss_11_data.variables["cth"][:, :]
+            ctp = data.caliop_ss_11_data.variables["ctp"][:, :]
+            cloud_class = data.caliop_ss_11_data.variables["cloud_class"][:]
 
-        for i in range(band_31.shape[0]):
-            x = np.stack([band_31[i, :, :],
-                        band_32[i, :, :]])
-            cth_ = cth[i, 11 * dn]
-            ctp_ = ctp[i, 11 * dn]
-            cloud_class_ = subsample_classes(cloud_class[i, 11 * dn - 11 : 11 * dn + 12])
-            training_data_ss_11.add_sample(x, cth_, ctp_, cloud_class_)
-    except:
+            for i in range(band_31.shape[0]):
+                x = np.stack([band_31[i, :, :],
+                            band_32[i, :, :]])
+                cth_ = cth[i, 11 * dn]
+                ctp_ = ctp[i, 11 * dn]
+                cloud_class_ = subsample_classes(cloud_class[i, 11 * dn - 11 : 11 * dn + 12])
+                training_data_ss_11.add_sample(x, cth_, ctp_, cloud_class_)
+    except Exception as e:
         pass
+
 
 
 

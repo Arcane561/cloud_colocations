@@ -70,18 +70,27 @@ class RawData:
         # Load the MODIS data.
         filename = "modis_" + str(dn) + ".nc"
         self.modis_data = Dataset(os.path.join(self.path, filename), mode = "r")
-        filename = "modis_ss_5_" + str(dn) + ".nc"
-        self.modis_ss_5_data = Dataset(os.path.join(self.path, filename), mode = "r")
-        filename = "modis_ss_11_" + str(dn) + ".nc"
-        self.modis_ss_11_data = Dataset(os.path.join(self.path, filename), mode = "r")
+
+        try:
+            filename = "modis_ss_5_" + str(dn) + ".nc"
+            self.modis_ss_5_data = Dataset(os.path.join(self.path, filename), mode = "r")
+            filename = "modis_ss_11_" + str(dn) + ".nc"
+            self.modis_ss_11_data = Dataset(os.path.join(self.path, filename), mode = "r")
+        except:
+            self.modis_ss_5_data  = None
+            self.modis_ss_11_data = None
 
         # Load the CALIOP data.
         filename = "caliop_" + str(dn) + ".nc"
         self.caliop_data = Dataset(os.path.join(self.path, filename), mode = "r")
-        filename = "caliop_ss_5_" + str(dn) + ".nc"
-        self.caliop_ss_5_data = Dataset(os.path.join(self.path, filename), mode = "r")
-        filename = "caliop_ss_11_" + str(dn) + ".nc"
-        self.caliop_ss_11_data = Dataset(os.path.join(self.path, filename), mode = "r")
+        try:
+            filename = "caliop_ss_5_" + str(dn) + ".nc"
+            self.caliop_ss_5_data = Dataset(os.path.join(self.path, filename), mode = "r")
+            filename = "caliop_ss_11_" + str(dn) + ".nc"
+            self.caliop_ss_11_data = Dataset(os.path.join(self.path, filename), mode = "r")
+        except:
+            self.caliop_ss_5_data  = None
+            self.caliop_ss_11_data = None
 
         self.n_colocations = self.modis_data.variables["band_1"].shape[0]
 

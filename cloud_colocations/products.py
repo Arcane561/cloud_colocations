@@ -289,7 +289,7 @@ class IcareProduct:
             f_p = self.get_preceeding_file(files[0])
             files = [f_p] + files
 
-        if not pos1[-1]:
+        if not pos1[-1] and not files == []:
             files += [self.get_following_file(files[-1])]
 
         return files
