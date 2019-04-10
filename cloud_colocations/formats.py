@@ -7,8 +7,11 @@ import numpy as np
 
 from pyhdf.SD import SD, SDC
 
-from cloud_colocations.products import file_cache, caliop, modis, modis_geo
+from cloud_colocations.products import file_cache, caliop, modis, modis_geo,\
+    cloudsat
 import cloud_colocations.utils as utils
+
+from datetime import datetime
 
 ################################################################################
 # IcareFile
@@ -57,6 +60,42 @@ class IcareFile:
         return objs
 
 ################################################################################
+# Combined
+################################################################################
+
+class Combined:
+    """
+    Base class for products that need to be combined for processing such as for
+    example the MODIS files.
+    """
+    @classmethod
+    def get_by_date(cls, t):
+        paths = []
+        for p in cls.products:
+            filename = p.get_file_by_date(t)
+            paths += [p.download_file(filename)]
+        return cls(*paths)
+
+    @classmethod
+    def get_files_in_range(cls, t0, t1):
+        """
+        Get files within time range.
+
+        Parameters:
+
+            t0(datetime.datetime): :code:`date`
+
+        """
+        paths = []
+        for p in cls.products:
+            filenames = p.get_files_in_range(t0, t1)
+            paths += [[]]
+            for f in filenames:
+                paths[-1] += [p.download_file(f)]
+            print(paths)
+        return [cls(*ps) for ps in zip(*paths)]
+
+################################################################################
 # Hdf4File
 ################################################################################
 
@@ -82,6 +121,12 @@ class Hdf4File:
 ################################################################################
 # Caliop01kmclay
 ################################################################################
+def caliop_utc_to_string(t):
+    f = t - np.trunc(t)
+    h = np.trunc(f * 24.0)
+    m = np.trunc((f * 24.0 - h) * 60)
+    s = np.trunc(((f * 24.0 - h) * 60.0 - m) * 60.0)
+    return "{0:06.0f}{1:02.0f}{2:02.0f}{3:02.0f}".format(t, h, m, s)
 
 class Caliop01kmclay(Hdf4File, IcareFile):
 
@@ -113,18 +158,22 @@ class Caliop01kmclay(Hdf4File, IcareFile):
         Get latitudes of profile in file as :code:`numpy.ndarray`.
         """
         if c_i < 0:
-            return self.file_handle.select('Latitude')[:]
+            return self.file_handle.select('Latitude')[:, 0]
+        elif dn == 0:
+            return self.file_handle.select('Latitude')[c_i, 0]
         else:
-            return self.file_handle.select('Latitude')[c_i - dn : c_i + dn + 1]
+            return self.file_handle.select('Latitude')[c_i - dn : c_i + dn + 1, 0]
 
     def get_longitudes(self, c_i = -1, dn = 0):
         """
         Get longitudes of profile in file as :code:`numpy.ndarray`.
         """
         if c_i < 0:
-            return self.file_handle.select('Longitude')[:]
+            return self.file_handle.select('Longitude')[:, 0]
+        elif dn == 0:
+            return self.file_handle.select('Longitude')[c_i, 0]
         else:
-            return self.file_handle.select('Longitude')[c_i - dn : c_i + dn + 1]
+            return self.file_handle.select('Longitude')[c_i - dn : c_i + dn + 1, 0]
 
     def get_cloud_top_height(self, c_i = -1, dn = 0):
         """
@@ -240,6 +289,13 @@ class Caliop01kmclay(Hdf4File, IcareFile):
         else:
             return self.file_handle.select('Profile_UTC_Time')[c_i - dn : c_i + dn + 1]
 
+    def get_start_time(self):
+        date_str = caliop_utc_to_string(self.get_utc_time()[0, 0])
+        return datetime.strptime(date_str, "%y%m%d%H%M%S")
+
+    def get_end_time(self):
+        date_str = caliop_utc_to_string(self.get_utc_time()[-1, 0])
+        return datetime.strptime(date_str, "%y%m%d%H%M%S")
 
     def get_profile_times(self, c_i = -1, dn = 0):
         """
@@ -253,23 +309,14 @@ class Caliop01kmclay(Hdf4File, IcareFile):
     def get_profile_id(self, c_i, dn):
         return self.file_handle.select('Profile_ID')[c_i - dn : c_i + dn + 1]
 
-
-
-
-
-
-
-
+    def get_colocation_centers(self, dn = 100):
+        n  = self.file_handle.select("Latitude")[:].shape[0]
+        for i in range(dn, n - dn - 1, dn):
+            yield (i,)
 
 ################################################################################
 # MODIS MYD03
 ################################################################################
-
-
-
-
-
-
 
 
 class ModisMyd03(Hdf4File, IcareFile):
@@ -304,7 +351,8 @@ class ModisMyd03(Hdf4File, IcareFile):
         dlats = lats - lat
         dlons = lons - lon
 
-        d = (dlats) ** 2 + (dlons) ** 2
+        deglen = np.cos(np.pi * lat / 180.0)
+        d = (dlats) ** 2 + (deglen * dlons) ** 2
         ind = np.argmin(d.ravel())
 
         i = ind // n
@@ -330,8 +378,9 @@ class ModisMyd03(Hdf4File, IcareFile):
         if d < d_max:
             self.i_cached = i
             self.j_cached = j
+            print("found colocation", i, j, d)
 
-        return i, j, d
+        return (i, j), d
 
 
 class ModisMyd021km(Hdf4File, IcareFile):
@@ -342,7 +391,7 @@ class ModisMyd021km(Hdf4File, IcareFile):
     product = modis
 
     def __init__(self, filename):
-        super().__init__(filename)
+        Hdf4File.__init__(self, filename)
         self._data = None
 
     def load_data(self):
@@ -521,13 +570,51 @@ class ModisMyd021km(Hdf4File, IcareFile):
         return res
 
 
+class ModisCombined(Combined, ModisMyd021km):
+    """
+    This class combined the MODIS Level1B radiances with the geolocation
+    information.
+    """
+
+    products = [modis, modis_geo]
+
+    def __init__(self, filename, geo_filename, dn = 100):
+        ModisMyd021km.__init__(self, filename)
+        self._data = None
+        self.geo_file = ModisMyd03(geo_filename)
+        self.dn = dn
+
+    def get_colocation(self, lat, lon, d_max = 1.0, use_cache = True):
+        return self.geo_file.get_colocation(lat, lon, d_max = d_max, use_cache = use_cache)
+
+    def get_latitudes(self, i, j):
+        i_start = i - self.dn
+        i_end   = i + self.dn + 1
+        j_start = j - self.dn
+        j_end   = j + self.dn + 1
+        return self.geo_file.lats[i_start : i_end, j_start : j_end]
+
+    def get_longitudes(self, i, j):
+        i_start = i - self.dn
+        i_end   = i + self.dn + 1
+        j_start = j - self.dn
+        j_end   = j + self.dn + 1
+        return self.geo_file.lons[i_start : i_end, j_start : j_end]
+
+    def get_radiances(self, i, j):
+        i_start = i - self.dn
+        i_end   = i + self.dn + 1
+        j_start = j - self.dn
+        j_end   = j + self.dn + 1
+        print(self.data.shape, i_start, i_end, j_start, j_end)
+        return self.data[:, i_start : i_end, j_start : j_end]
 
 ################################################################################
 # 2B-CLDCLASS-LIDAR    
 ################################################################################
 
 
-class 2BCLDCLASS(Hdf4File, IcareFile):
+class TWOBCLDCLASS(Hdf4File, IcareFile):
 
     product = cloudsat
 
@@ -646,11 +733,6 @@ class 2BCLDCLASS(Hdf4File, IcareFile):
             return self.f['PrecipitationFlag']\
                 [c_i - dn : c_i + dn + 1, 0]
 
-
-
-################################################################################
-
-
     def get_profile_times(self, c_i = -1, dn = 0):
         """
         Returns the profile times for all profiles in the file as numpy array.
@@ -670,10 +752,3 @@ class 2BCLDCLASS(Hdf4File, IcareFile):
             return self.f['DEM_elevation'][:]
         else:
             return self.f['DEM_elevation'][c_i - dn : c_i + dn + 1]
-
-
-
-
-
-
-

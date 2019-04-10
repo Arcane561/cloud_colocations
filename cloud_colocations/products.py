@@ -12,14 +12,12 @@ Atributes:
 """
 from ftplib   import FTP
 from datetime import datetime, timedelta
-import os
 from cloud_colocations import settings
-import shutil
-import tempfile
+import os, re, requests, shutil, tempfile
 
 def ensure_extension(path, ext):
-    if not path[-len(ext):] == ext:
-        path = path + ext
+    if not any([path[-len(e):] == e for e in ext]):
+        path = path + ext[0]
     return path
 
 ################################################################################
@@ -92,90 +90,44 @@ def set_cache(path):
         path(:code:`str`): Path to the local cache.
 
     """
-    file_cache = FileCache(path = path)
+    globals()["file_cache"] = FileCache(path = path)
 
 ################################################################################
-# Icare product
+# Base class for data products
 ################################################################################
 
-class IcareProduct:
+from abc import ABCMeta, abstractmethod
+
+class DataProduct(metaclass = ABCMeta):
     """
-    Base class for data products available from the ICARE ftp server.
+    The DataProduct class implements generic methods related to querying
+    satellite product files.
     """
-    base_url = "ftp.icare.univ-lille1.fr"
+    def __init__(self):
+        pass
 
-    def __init__(self, product_path, name_to_date):
-        """
-        Create a new product instance.
-
-        Arguments:
-
-        product_path(str): The path of the product. This should point to
-            the folder that bears the product name and contains the directory
-            tree which contains the data files sorted by date.
-
-        name_to_date(function): Funtion to convert filename to datetime object.
-        """
-        self.product_path = product_path
-        self.name_to_date = name_to_date
-        self.cache = {}
-
-
-    def __ftp_listing_to_list__(self, path, t = int):
-        """
-        Retrieve directory content from ftp listing as list.
-
-        Arguments:
-
-           path(str): The path from which to retrieve the ftp listing.
-
-           t(type): Type constructor to apply to the elements of the
-                listing. To retrieve a list of strings use t = str.
-
-        Return:
-
-            A list containing the content of the ftp directory.
-
-        """
-        if not path in self.cache:
-            with FTP(IcareProduct.base_url) as ftp:
-                ftp.login(user = settings.login["user"],
-                          passwd = settings.login["password"])
-                try:
-                    ftp.cwd(path)
-                except:
-                    raise Exception("Can't find product folder " + path  +
-                                    "on the ICARE ftp server.. Are you sure this is"
-                                    "a  ICARE multi sensor product?")
-                ls = ftp.nlst()
-            ls = [t(l) for l in ls]
-            self.cache[path] = ls
-        return self.cache[path]
-
+    @abstractmethod
     def get_files(self, year, day):
         """
-        Return all files from given year and julian day. Files are returned
-        in chronological order sorted by the file timestamp.
+        This method should return a list of strings containing all files available
+        for a given day.
 
         Arguments:
 
-            year(int): The year from which to retrieve the filenames.
+            year(int): 4-digit number representing the year from which to retrieve
+                the data.
 
-            day(int): Day of the year of the data from which to retrieve the
-                the filenames.
-
-        Return:
-
-            List of all HDF files available of this product on the given date.
+            day(int): The Julian day of the year from which to retrieve the data.
         """
-        day_str = str(day)
-        day_str = "0" * (3 - len(day_str)) + day_str
-        date = datetime.strptime(str(year) + str(day_str), "%Y%j")
-        path = os.path.join(self.product_path, str(year),
-                            date.strftime("%Y_%m_%d"))
-        ls = self.__ftp_listing_to_list__(path, str)
-        files = [l for l in ls if l[-3:] == "hdf"]
-        return files
+        pass
+
+    @abstractmethod
+    def name_to_date(self, filename):
+        """
+        This method should return a :class:`datetime` object corresponding to
+        the start time of this data file.
+        """
+        pass
 
     def get_preceeding_file(self, filename):
         """
@@ -206,7 +158,6 @@ class IcareProduct:
             return self.get_files(year, day)[-1]
         else:
             return files[i - 1]
-
 
     def get_following_file(self, filename):
         """
@@ -345,19 +296,166 @@ class IcareProduct:
             return cache_hit
         else:
             date = self.name_to_date(filename)
-            path = os.path.join(self.product_path, str(date.year),
-                                date.strftime("%Y_%m_%d"))
-            filename = ensure_extension(filename, ".hdf")
+            filename = ensure_extension(filename, [".hdf", "HDF5"])
             dest     = os.path.join(file_cache.path, filename)
+            self.download(filename, dest)
 
-            print("Downloading file ", filename)
-
-            with FTP(self.base_url) as ftp:
-                ftp.login(user = settings.login['user'], passwd = settings.login['password'])
-                ftp.cwd(path)
-                with open(dest, 'wb') as f:
-                    ftp.retrbinary('RETR ' + filename, f.write)
         return dest
+
+################################################################################
+# NASA Gesdisc GPM products
+################################################################################
+
+class GesdiscProduct(DataProduct):
+    """
+    Base class for data products available from the NASA gesdisc https server.
+    """
+    base_url = "gpm1.gesdisc.eosdis.nasa.gov"
+
+    def __init__(self, level, product):
+        super().__init__()
+        self.prog    = re.compile('"[^"]*.HDF5"')
+        self.level   = level
+        self.product = product
+
+    @property
+    def _request_string(self):
+        base_url = "https://gpm1.gesdisc.eosdis.nasa.gov/data/{level}/{product}"
+        base_url = base_url.format(level = self.level, product = self.product)
+        return base_url + "/{year}/{day}/{filename}"
+
+
+    def get_files(self, year, day):
+
+        day = str(day)
+        day = "0" * (3 - len(day)) + day
+        c = http.client.HTTPSConnection("gpm1.gesdisc.eosdis.nasa.gov")
+
+        request_string = self._request_string.format(year = year, day = day, filename = "")
+        c.request("GET", request_string)
+        r = c.getresponse()
+        r = str(r.read())
+
+        files = self.prog.findall(r)
+        return [f[1:-1] for f in files]
+
+    def name_to_date(self, filename):
+        s = filename.split(".")[4]
+        t = datetime.strptime(s[:16], "%Y%m%d-S%H%M%S")
+        return t
+
+    def download(self, filename, dest):
+
+        t = self.name_to_date(filename)
+        year = t.year
+        day  = t.strftime("%j")
+        day  = "0" * (3 - len(day)) + day
+
+        request_string = self._request_string.format(year = year, day = day, filename = filename)
+
+        r = requests.get(request_string)
+        with open(dest, 'wb') as f:
+            shutil.copyfileobj(r.raw, f) 
+
+
+################################################################################
+# Products from ICARE server
+################################################################################
+
+class IcareProduct(DataProduct):
+
+    """
+    Base class for data products available from the ICARE ftp server.
+    """
+    base_url = "ftp.icare.univ-lille1.fr"
+
+    def __init__(self, product_path, name_to_date):
+        """
+        Create a new product instance.
+
+        Arguments:
+
+        product_path(str): The path of the product. This should point to
+            the folder that bears the product name and contains the directory
+            tree which contains the data files sorted by date.
+
+        name_to_date(function): Funtion to convert filename to datetime object.
+        """
+        self.product_path = product_path
+        self._name_to_date = name_to_date
+        self.cache = {}
+
+
+    def __ftp_listing_to_list__(self, path, t = int):
+        """
+        Retrieve directory content from ftp listing as list.
+
+        Arguments:
+
+           path(str): The path from which to retrieve the ftp listing.
+
+           t(type): Type constructor to apply to the elements of the
+                listing. To retrieve a list of strings use t = str.
+
+        Return:
+
+            A list containing the content of the ftp directory.
+
+        """
+        if not path in self.cache:
+            with FTP(IcareProduct.base_url) as ftp:
+                ftp.login(user = settings.login["user"],
+                          passwd = settings.login["password"])
+                try:
+                    ftp.cwd(path)
+                except:
+                    raise Exception("Can't find product folder " + path  +
+                                    "on the ICARE ftp server.. Are you sure this is"
+                                    "a  ICARE multi sensor product?")
+                ls = ftp.nlst()
+            ls = [t(l) for l in ls]
+            self.cache[path] = ls
+        return self.cache[path]
+
+    def name_to_date(self, filename):
+        return self._name_to_date(filename)
+
+    def get_files(self, year, day):
+        """
+        Return all files from given year and julian day. Files are returned
+        in chronological order sorted by the file timestamp.
+
+        Arguments:
+
+            year(int): The year from which to retrieve the filenames.
+
+            day(int): Day of the year of the data from which to retrieve the
+                the filenames.
+
+        Return:
+
+            List of all HDF files available of this product on the given date.
+        """
+        day_str = str(day)
+        day_str = "0" * (3 - len(day_str)) + day_str
+        date = datetime.strptime(str(year) + str(day_str), "%Y%j")
+        path = os.path.join(self.product_path, str(year),
+                            date.strftime("%Y_%m_%d"))
+        ls = self.__ftp_listing_to_list__(path, str)
+        files = [l for l in ls if l[-3:] == "hdf"]
+        return files
+
+    def download(self, filename, dest):
+        date = self.name_to_date(filename)
+        path = os.path.join(self.product_path, str(date.year),
+                            date.strftime("%Y_%m_%d"))
+        with FTP(self.base_url) as ftp:
+            ftp.login(user = settings.login['user'], passwd = settings.login['password'])
+            ftp.cwd(path)
+            with open(dest, 'wb') as f:
+                ftp.retrbinary('RETR ' + filename, f.write)
+
+import http.client
 
 ################################################################################
 # Filename to date conversion
@@ -380,11 +478,8 @@ def caliop_name_to_date(s):
 
 def cloudsat_name_to_date(s):
     """Convert CLOUDSAT name to date"""
-    print(s)
     s = os.path.basename(s)
-    print(s)
     s = s.split("_")[0]
-    print(s)
     return datetime.strptime(s, "%Y%j%H%M%S")
 
 ################################################################################
@@ -396,9 +491,5 @@ modis      = IcareProduct("SPACEBORNE/MODIS/MYD021KM", modis_name_to_date)
 modis_geo  = IcareProduct("SPACEBORNE/MODIS/MYD03", modis_name_to_date)
 cloudsat   = IcareProduct("SPACEBORNE/CLOUDSAT/2B-CLDCLASS.v05.06", cloudsat_name_to_date)
 
-#cs = 'CAL_LID_L2_01kmCLay-Standard-V4-10.2010-01-05T00-50-26ZN.hdf'
-#t0 = datetime(2010, 1, 5, 0, 0, 0)
-#t1 = datetime(2010, 1, 5, 23, 55, 0)
-#cf = caliop.get_file_by_date(t0)
-#
-#cfs = caliop.get_files_in_range(t0, t1)
+dpr     = GesdiscProduct("GPM_L2", "GPM_2ADPR.06", )
+gpm_gmi = GesdiscProduct("GPM_L1C", "GPM_1CGPMGMI.05")

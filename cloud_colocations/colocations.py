@@ -27,11 +27,13 @@ class OutputFile:
     Generic output file the stores extracted collocations for given source and
     matched products.
 
-    The colocation output file contains three group: 1 for the data from the
-    source product, 1 for the data from the matched product and one with
-    meta data on the colocations.
+    The colocation output file contains three groups:
+       - 1 for the data from the source product
+       - 1 for the data from the matched product
+       - 1 with meta data on the colocations.
     """
     def __init__(self,
+                 name,
                  path,
                  source_product,
                  matched_product,
@@ -39,7 +41,7 @@ class OutputFile:
 
         self.source_product  = source_product
         self.matched_product = matched_product
-        self.fh = Dataset(path, mode = mode)
+        self.fh = Dataset(os.path.join(path, name + ".nc"), mode = mode)
 
         self.fh.createDimension("colocation_index", size = None)
 
@@ -50,23 +52,27 @@ class OutputFile:
         self.sp_group = self.fh.createGroup(source_product.name)
         self.sp_dims  = []
         for (n, s) in self.source_product.dimensions:
-            self.sp_dims += self.sp_group.createDimension(n, size = s)
+            self.sp_group.createDimension(n, size = s)
+            self.sp_dims += [n]
 
-        dims = ("colocation_index",) + tuple(self.sp_dims)
         self.sp_vars = {}
-        for (n, t) in self.source_product.variables:
-            self.sp_vars[n] += self.sp_group.createVariable(n, t, dimenions = dims)
+        for (n, t, ds) in self.source_product.variables:
+            dims = ("colocation_index",) + ds
+            self.sp_vars[n] = self.sp_group.createVariable(n, t, dimensions = dims)
         #
         # Matched product
         #
 
         self.mp_group = self.fh.createGroup(matched_product.name)
-            self.mp_dims += self.mp_group.createDimension(n, size = s)
+        self.mp_dims = []
+        for (n, t) in self.matched_product.dimensions:
+            self.mp_group.createDimension(n, size = s)
+            self.mp_dims += [n]
 
-        dims = ("colocation_index",) + tuple(self.mp_dims)
         self.mp_vars = {}
-        for (n, t) in self.matched_product.variables:
-            self.mp_vars[n] += self.mp_group.createVariable(n, t, dimenions = dims)
+        for (n, t, ds) in self.matched_product.variables:
+            dims = ("colocation_index",) + ds
+            self.mp_vars[n] = self.mp_group.createVariable(n, t, dimensions = dims)
 
         self.ci = 0
 
@@ -74,21 +80,29 @@ class OutputFile:
         name = "get_{0}".format(variable_name)
         try:
             f = getattr(product, name)
-            data = f(*indices)
+
+            if hasattr(product, "get_kwargs"):
+                kwargs = product.get_kwargs
+            else:
+                kwargs = {}
+
+            data = f(*indices, **kwargs)
+
         except Exception as e:
             raise Exception("The following error occurred when trying to"
-                            "retrieve variable variable {0} from product {1}:"
-                            " {2}".format(product.name, variable_name, e))
+                            "retrieve variable {0} from product {1}:"
+                            " {2}".format(variable_name, product.name, e))
         return data
 
-    def add_colocation(self, indices):
+    def add_colocation(self, source_file, source_inds, matched_file, matched_inds):
 
-        for p, vs in zip([self.matched_product, self.source_product],
-                         [self.mp_vars, self.sp_vars]):
-            for (n, t) in p.variables:
-                data = self._get_variable(p, n, indices)
-                vs[n][self.ci, :] = data
+        for (n, _, _) in self.source_product.variables:
+            data = self._get_variable(source_file, n, source_inds)
+            self.sp_vars[n][self.ci, :] = data
 
+        for (n, _, _) in self.matched_product.variables:
+            data = self._get_variable(matched_file, n, matched_inds)
+            self.mp_vars[n][self.ci, :] = data
 
 
 ################################################################################
@@ -657,6 +671,7 @@ class ProcessDay:
 
     """
     def __init__(self,
+                 name,
                  year,
                  day,
                  path,
@@ -666,7 +681,6 @@ class ProcessDay:
 
         self.day  = day
         self.year = year
-        self.dn   = dn
 
         # Create output tree.
         if cache is None:
@@ -690,7 +704,13 @@ class ProcessDay:
         if cache is None:
             products.file_cache.temp = True
 
-    def _get_source_files(self)
+        self.source_product  = source_product
+        self.matched_product = matched_product
+
+        self.output_file = OutputFile(name, self.result_path, source_product, matched_product)
+        self.file_cache = None
+
+    def _get_source_files(self):
         day_str = str(self.day)
         day_str = "0" * (3 - len(day_str)) + day_str
 
@@ -712,6 +732,57 @@ class ProcessDay:
                                                    e))
         return fs
 
+    def _get_matched_files(self, source_file):
+
+        t0 = source_file.get_start_time()
+        t1 = source_file.get_end_time()
+
+        fs = self.matched_product.get_files_in_range(t0, t1)
+        return fs
+
+    def get_colocation(self, lat, lon, matched_files, d_max = 1.0, use_cache = True):
+        """
+        Get colocation centered around a given Caliop profile.
+
+        Arguments:
+
+            profile_index(int): Index of the center profile in the Caliop1kmClay
+                file.
+
+            d_max(float): Maximum distance for a found colocation to be valid.
+
+            use_cache(bool): Whether or not to use the cache for faster
+            colocation lookup.
+
+        Returns:
+
+            Tuple :code:`(i, j, k, d)` containing:
+                - the index :code:`i` of the Myd021km file which
+                  contains the colocations.
+                - the along-track index :code:`j` of the center pixel of the
+                  colocation.
+                - the across-track index :code:`k` of the center pixel of the
+                  colocation.
+                - the distance :code:`d` of the Caliop center profile and
+                  the Modis center pixel in kilometer.
+
+        """
+        d = np.finfo("d").max
+
+        if use_cache and self.file_cache:
+            f = self.file_cache
+            inds, d_t = f.get_colocation(lat, lon, d_max, use_cache)
+            if d_t < d_max:
+                return f, inds, d_t
+
+        for f in matched_files:
+            inds, d_t = f.get_colocation(lat, lon, d_max, use_cache)
+            if d_t < d:
+                if d < d_max:
+                      self.file_cache = f
+                      break
+
+        return f, inds, d
 
     def run(self):
         """
@@ -720,37 +791,20 @@ class ProcessDay:
         This will start downloading the files and extract the colocations
         for the given day.
         """
-        day_str = str(self.day)
-        day_str = "0" * (3 - len(day_str)) + day_str
+        source_files = self._get_source_files()
+        for source_file in source_files:
 
-        t0 = datetime.strptime(str(self.year) + "_" + day_str + "_000000",
-                               "%Y_%j_%H%M%S")
+            matched_files = self._get_matched_files(source_file)
 
-        day_str = str(self.day + 1)
-        day_str = "0" * (3 - len(day_str)) + day_str
-        t1 = datetime.strptime(str(self.year) + "_" + day_str + "_000000",
-                               "%Y_%j_%H%M%S")
-        caliop_files = Caliop01kmclay.get_files_in_range(t0, t1)
+            if hasattr(self.source_product, "get_kwargs"):
+                kwargs = self.source_product.get_kwargs
+            else:
+                kwargs = {}
 
-        first_file = True
-        for cf in caliop_files:
-            colls = Colocation(self.dn, cf, self.result_path)
-
-            # If this is the first file from that day we recreate
-            # the output files. Otherwise we append to the existing
-            # ones.
-            colls.create_output_files(first_file)
-            if first_file:
-                first_file = False
-
-            lats_caliop = cf.get_latitudes()
-
-            i = self.dn * 11
-            while i < lats_caliop.size - self.dn * 11:
-                j, k, l, d = colls.get_colocation(i)
-
+            for source_inds in source_file.get_colocation_centers(**kwargs):
+                lat = source_file.get_latitudes(*source_inds)
+                lon = source_file.get_longitudes(*source_inds)
+                matched_file, matched_inds, d = self.get_colocation(lat, lon, matched_files)
                 if d < 1.0:
-                    colls.add_colocation(i, j, k, l, d)
-                i += 2 * self.dn
-
-            print("Finished processing " + cf.filename)
+                    print("Found colocation: ", d)
+                    self.output_file.add_colocation(source_file, source_inds, matched_file, matched_inds)
