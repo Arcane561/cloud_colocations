@@ -3,21 +3,23 @@ The :code:`formats` module provides classes to simplify the handling
 of the file formats of the different data products.
 """
 
+import os
 import numpy as np
 
 from pyhdf.SD import SD, SDC
+from h5py import File
 
 from cloud_colocations.products import file_cache, caliop, modis, modis_geo,\
-    cloudsat
+    cloudsat, gpm_gmi, dpr, gpm_cmb, get_cache_path
 import cloud_colocations.utils as utils
 
 from datetime import datetime
 
 ################################################################################
-# IcareFile
+# ProductFile
 ################################################################################
 
-class IcareFile:
+class ProductFile:
     """
     Base class for files from the Icare data center. Provides abstract class
     methods to obtain files for a given point in time or time range.
@@ -43,7 +45,7 @@ class IcareFile:
         return cls(path)
 
     @classmethod
-    def get_files_in_range(cls, t0, t1):
+    def get_files_in_range(cls, t0, t1, t0_inclusive = False):
         """
         Get files within time range.
 
@@ -52,7 +54,7 @@ class IcareFile:
             t0(datetime.datetime): :code:`date`
 
         """
-        filenames = cls.product.get_files_in_range(t0, t1)
+        filenames = cls.product.get_files_in_range(t0, t1, t0_inclusive)
         objs = []
         for f in filenames:
             path = cls.product.download_file(f)
@@ -128,7 +130,7 @@ def caliop_utc_to_string(t):
     s = np.trunc(((f * 24.0 - h) * 60.0 - m) * 60.0)
     return "{0:06.0f}{1:02.0f}{2:02.0f}{3:02.0f}".format(t, h, m, s)
 
-class Caliop01kmclay(Hdf4File, IcareFile):
+class Caliop01kmclay(Hdf4File, ProductFile):
 
     product = caliop
 
@@ -153,7 +155,7 @@ class Caliop01kmclay(Hdf4File, IcareFile):
         self.profile_times = self.file_handle.select('Profile_Time')[:].ravel()
 
 
-    def get_latitudes(self, c_i = -1, dn = 0):
+    def get_latitude(self, c_i = -1, dn = 0):
         """
         Get latitudes of profile in file as :code:`numpy.ndarray`.
         """
@@ -164,7 +166,7 @@ class Caliop01kmclay(Hdf4File, IcareFile):
         else:
             return self.file_handle.select('Latitude')[c_i - dn : c_i + dn + 1, 0]
 
-    def get_longitudes(self, c_i = -1, dn = 0):
+    def get_longitude(self, c_i = -1, dn = 0):
         """
         Get longitudes of profile in file as :code:`numpy.ndarray`.
         """
@@ -318,8 +320,7 @@ class Caliop01kmclay(Hdf4File, IcareFile):
 # MODIS MYD03
 ################################################################################
 
-
-class ModisMyd03(Hdf4File, IcareFile):
+class ModisMyd03(Hdf4File, ProductFile):
     """
     The MODIS Aqua geolocation file format containing geolocation data
     corresponding to the L1B radiances.
@@ -383,7 +384,7 @@ class ModisMyd03(Hdf4File, IcareFile):
         return (i, j), d
 
 
-class ModisMyd021km(Hdf4File, IcareFile):
+class ModisMyd021km(Hdf4File, ProductFile):
     """
     The MODIS Aqua Level1B calibrated radiances at 1 km resolution.
     """
@@ -614,7 +615,7 @@ class ModisCombined(Combined, ModisMyd021km):
 ################################################################################
 
 
-class TWOBCLDCLASS(Hdf4File, IcareFile):
+class TWOBCLDCLASS(Hdf4File, ProductFile):
 
     product = cloudsat
 
@@ -752,3 +753,228 @@ class TWOBCLDCLASS(Hdf4File, IcareFile):
             return self.f['DEM_elevation'][:]
         else:
             return self.f['DEM_elevation'][c_i - dn : c_i + dn + 1]
+
+
+################################################################################
+# GPM files
+################################################################################
+
+class GPMGMI1C(ProductFile):
+
+    product = gpm_gmi
+    dn = 50
+    name = "gmi"
+    dimensions = [("along_track", 2 * dn + 1),
+                  ("across_track", 2 * dn + 1),
+                  ("channels", 13)]
+    variables = [("y", "f4", ("along_track", "across_track", "channels")),
+                 ("latitudes", "f4", ("along_track", "across_track")),
+                 ("longitudes", "f4", ("along_track", "across_track"))]
+
+    def __init__(self, filename):
+        self.filename = filename
+        self.dn = GPMGMI1C.dn
+        self.file_handle = File(filename)
+        g = self.file_handle["S1"]
+        self.lat_s1 = g['Latitude'][:]
+        self.lon_s1 = g['Longitude'][:]
+        self.y_s1 = g['Tc'][:]
+        g = self.file_handle['S2']
+        self.lat_s2 = g['Latitude'][:]
+        self.lon_s2 = g['Longitude'][:]
+        self.y_s2 = g['Tc'][:]
+
+        self.c = self.lat_s2.shape[1] // 2 - 1
+
+    def _get_indices(self, i, j, dn):
+        if dn is None:
+            dn = GPMGMI1C.dn
+        i_start = i - dn
+        i_end   = i + dn + 1
+        j_start = j - dn
+        j_end   = j + dn + 1
+        return i_start, i_end, j_start, j_end, dn
+
+    def get_start_time(self,):
+        return GPMGMI1C.product.name_to_date(os.path.basename(self.filename))
+
+    def get_end_time(self,):
+        g = self.file_handle['S2']['ScanTime']
+        Y = g['Year'][-1]
+        M = g['Month'][-1]
+        D = g['DayOfMonth'][-1]
+        h = g['Hour'][-1]
+        m = g['Minute'][-1]
+        s = g['Second'][-1]
+        return datetime(Y, M, D, h, m, s)
+
+    def get_y(self, i, j, dn = None):
+        i_start, i_end, j_start, j_end, dn = self._get_indices(i, j, dn)
+        y = np.zeros((2 * dn + 1, 2 * dn + 1, 13))
+        y[:, :, :9] = self.y_s1[i_start : i_end, j_start : j_end, :]
+        y[:, :, 9:] = self.y_s2[i_start : i_end, j_start : j_end, :]
+        return y
+
+    def get_latitudes(self, i, j, dn = None):
+        i_start, i_end, j_start, j_end, _ = self._get_indices(i, j, dn)
+        return self.lat_s1[i_start : i_end, j_start : j_end]
+
+    def get_longitudes(self, i, j, dn = None):
+        i_start, i_end, j_start, j_end, _ = self._get_indices(i, j, dn)
+        return self.lon_s1[i_start : i_end, j_start : j_end]
+
+    def get_latitude(self, i = -1, j = -1):
+        m, n = self.lat_s1.shape
+
+        if i < 0:
+            i = slice(0, m)
+
+        if j < 0:
+            j = slice(0, n)
+
+        return self.lat_s1[i, j]
+
+    def get_longitude(self, i = -1, j = -1):
+        m, n = self.lon_s1.shape
+
+        if i < 0:
+            i = slice(0, m)
+
+        if j < 0:
+            j = slice(0, n)
+
+        return self.lon_s1[i, j]
+
+    def get_colocation_centers(self, dn = 50):
+        n  = self.lat_s1.shape[0]
+        c  = self.lat_s1.shape[1] // 2 - 1
+        for i in range(dn, n - dn, dn // 2):
+            self.cache = [(i - dn), (i + dn)]
+            yield (i, c)
+
+class GPM(Combined):
+
+    products = [gpm_gmi, dpr]
+    name = "dpr"
+    dimensions = [("along_track", 2 * GPMGMI1C.dn + 1),
+                  ("across_track", 2 * GPMGMI1C.dn + 1)]
+    variables = [("rr", "f4", ("along_track", "across_track"))]
+
+    def __init__(self, gmi_file, dpr_file):
+        from pyresample import kd_tree, geometry
+        self.dn = GPMGMI1C.dn
+
+        # GMI for remapping
+        self.gmi_file = GPMGMI1C(gmi_file)
+
+        # DPR
+        self.dpr_file = File(dpr_file)
+        g = self.dpr_file['NS']
+        self.lat_dpr = g['Latitude'][:]
+        self.lon_dpr = g['Longitude'][:]
+        self.precip  = g['SLV']['precipRateNearSurface'][:]
+        self.precip[:, [0, -1]] = self.precip.min()
+        self.precip[[0, -1], :] = self.precip.min()
+
+        swath_dpr = geometry.SwathDefinition(lats = self.lat_dpr, lons = self.lon_dpr)
+        swath_gmi = geometry.SwathDefinition(lats = self.gmi_file.lat_s1, lons = self.gmi_file.lon_s1)
+        self.precip_r = kd_tree.resample_nearest(swath_dpr, self.precip, swath_gmi, radius_of_influence = 5e3)
+
+    def get_latitudes(self, i = -1, j = -1):
+        m, n = self.lat_dpr.shape
+
+        if i < 0:
+            i = slice(0, m)
+
+        if j < 0:
+            j = slice(0, n)
+
+        return self.lat_dpr[i, j]
+
+    def get_longitudes(self, i = -1, j = -1):
+        m, n = self.lon_dpr.shape
+
+        if i < 0:
+            i = slice(0, m)
+
+        if j < 0:
+            j = slice(0, n)
+
+        return self.lon_dpr[i, j]
+
+
+    def get_colocation(self, lat, lon, d_max = 1.0, use_cache = True):
+        i, j = np.where(np.logical_and(self.gmi_file.lat_s1 == lat,
+                                       self.gmi_file.lon_s1 == lon))
+        if len(i) == 0 or len(j) == 0:
+            return (0, 0), 1e10
+        return (i[0], j[0]), 0.0
+
+    def get_rr(self, i, j, dn = 50):
+        i_start = i - dn
+        i_end   = i + dn + 1
+        j_start = j - dn
+        j_end   = j + dn + 1
+
+        lats = self.lat_dpr[i_start : i_end, j_start : j_end]
+        lons = self.lon_dpr[i_start : i_end, j_start : j_end]
+
+        return self.precip_r[i_start : i_end, j_start : j_end]
+
+
+class GPMCMB(ProductFile):
+
+    product = gpm_cmb
+    name = "gpm_combined"
+    dimensions = [("along_track", 49),
+                  ("across_track", 49)]
+    variables = [("rr", "f4", ("along_track", "across_track")),
+                 ("latitudes", "f4", ("along_track", "across_track")),
+                 ("longitudes", "f4", ("along_track", "across_track"))]
+
+    def __init__(self, file):
+        self.file_handle = File(file, "r")
+        g = self.file_handle['NS']
+        self.lat = g['Latitude'][:]
+        self.lon = g['Longitude'][:]
+        self.precip = g['surfPrecipTotRate']
+
+    def _get_indices(self, i, j):
+        dn = 24
+        i_start = i - dn
+        i_end   = i + dn + 1
+        j_start = 0
+        j_end   = 49
+        return i_start, i_end, j_start, j_end
+
+    def get_latitudes(self, i, j):
+        i_start, i_end, j_start, j_end = self._get_indices(i, j)
+        return self.lat[i_start : i_end, j_start : j_end]
+
+    def get_longitudes(self, i, j):
+        i_start, i_end, j_start, j_end = self._get_indices(i, j)
+        return self.lon[i_start : i_end, j_start : j_end]
+
+    def get_colocation(self, lat, lon, d_max = 1.0, use_cache = True):
+        m, n = self.lat.shape
+        d = (self.lat - lat) ** 2 + (self.lon - lon) ** 2
+        ii = np.argmin(d.ravel())
+        i = ii // n 
+        j = ii % n
+
+        return (i, j), d[i, j]
+
+    def get_rr(self, i, j):
+        dn = 24
+        i_start = i - dn
+        i_end   = i + dn + 1
+        j_start = j - dn - 1
+        j_end   = j + dn
+        return self.precip[i_start : i_end, :]
+
+    def get_colocation_centers(self):
+        dn = 24
+        n  = self.lat.shape[0]
+        c  = self.lat.shape[1] // 2 - 1
+        for i in range(dn, n - dn, dn):
+            yield (i, c)

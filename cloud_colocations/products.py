@@ -76,7 +76,7 @@ class FileCache:
         self.temp = False
 
     def __del__(self):
-        if self.temp:
+        if not shutil is None and self.temp:
             shutil.rmtree(self.path)
 
 file_cache = FileCache()
@@ -91,6 +91,9 @@ def set_cache(path):
 
     """
     globals()["file_cache"] = FileCache(path = path)
+
+def get_cache_path():
+    return globals()["file_cache"].path
 
 ################################################################################
 # Base class for data products
@@ -226,7 +229,7 @@ class DataProduct(metaclass = ABCMeta):
             ts = [self.name_to_date(f) for f in fs]
 
             dts0 = [self.name_to_date(f) - t0 for f in fs]
-            pos0 = [dt.total_seconds() > 0.0 for dt in dts0]
+            pos0 = [dt.total_seconds() >= 0.0 for dt in dts0]
 
             dts1 = [self.name_to_date(f) - t1 for f in fs]
             pos1 = [dt.total_seconds() > 0.0 for dt in dts1]
@@ -292,7 +295,8 @@ class DataProduct(metaclass = ABCMeta):
             dest(str): Where to store the file.
         """
         cache_hit = file_cache.get(filename)
-        if cache_hit:
+        print("Downloading file: ", cache_hit, filename)
+        if not cache_hit is None:
             return cache_hit
         else:
             date = self.name_to_date(filename)
@@ -336,7 +340,7 @@ class GesdiscProduct(DataProduct):
         r = c.getresponse()
         r = str(r.read())
 
-        files = self.prog.findall(r)
+        files = list(set(self.prog.findall(r)))
         return [f[1:-1] for f in files]
 
     def name_to_date(self, filename):
@@ -346,6 +350,7 @@ class GesdiscProduct(DataProduct):
 
     def download(self, filename, dest):
 
+        print("Downloading Gesdisc file: ", filename, dest)
         t = self.name_to_date(filename)
         year = t.year
         day  = t.strftime("%j")
@@ -353,9 +358,11 @@ class GesdiscProduct(DataProduct):
 
         request_string = self._request_string.format(year = year, day = day, filename = filename)
 
+
         r = requests.get(request_string)
         with open(dest, 'wb') as f:
-            shutil.copyfileobj(r.raw, f) 
+            for chunk in r:
+                f.write(chunk)
 
 
 ################################################################################
@@ -449,6 +456,7 @@ class IcareProduct(DataProduct):
         date = self.name_to_date(filename)
         path = os.path.join(self.product_path, str(date.year),
                             date.strftime("%Y_%m_%d"))
+
         with FTP(self.base_url) as ftp:
             ftp.login(user = settings.login['user'], passwd = settings.login['password'])
             ftp.cwd(path)
@@ -492,4 +500,5 @@ modis_geo  = IcareProduct("SPACEBORNE/MODIS/MYD03", modis_name_to_date)
 cloudsat   = IcareProduct("SPACEBORNE/CLOUDSAT/2B-CLDCLASS.v05.06", cloudsat_name_to_date)
 
 dpr     = GesdiscProduct("GPM_L2", "GPM_2ADPR.06", )
-gpm_gmi = GesdiscProduct("GPM_L1C", "GPM_1CGPMGMI.05")
+gpm_cmb = GesdiscProduct("GPM_L2", "GPM_2BCMB.06")
+gpm_gmi = GesdiscProduct("GPM_L1C", "GPM_1CGPMGMI_R.05")

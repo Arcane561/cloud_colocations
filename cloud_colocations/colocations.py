@@ -36,8 +36,7 @@ class OutputFile:
                  name,
                  path,
                  source_product,
-                 matched_product,
-                 mode = "w"):
+                 matched_product, mode = "w"):
 
         self.source_product  = source_product
         self.matched_product = matched_product
@@ -63,18 +62,22 @@ class OutputFile:
         # Matched product
         #
 
-        self.mp_group = self.fh.createGroup(matched_product.name)
-        self.mp_dims = []
-        for (n, t) in self.matched_product.dimensions:
-            self.mp_group.createDimension(n, size = s)
-            self.mp_dims += [n]
+        if not self.matched_product is None:
+            self.mp_group = self.fh.createGroup(matched_product.name)
+            self.mp_dims = []
+            for (n, s) in self.matched_product.dimensions:
+                self.mp_group.createDimension(n, size = s)
+                self.mp_dims += [n]
 
-        self.mp_vars = {}
-        for (n, t, ds) in self.matched_product.variables:
-            dims = ("colocation_index",) + ds
-            self.mp_vars[n] = self.mp_group.createVariable(n, t, dimensions = dims)
+            self.mp_vars = {}
+            for (n, t, ds) in self.matched_product.variables:
+                dims = ("colocation_index",) + ds
+                self.mp_vars[n] = self.mp_group.createVariable(n, t, dimensions = dims)
 
         self.ci = 0
+
+    def close(self):
+        self.fh.close()
 
     def _get_variable(self, product, variable_name, indices):
         name = "get_{0}".format(variable_name)
@@ -100,9 +103,12 @@ class OutputFile:
             data = self._get_variable(source_file, n, source_inds)
             self.sp_vars[n][self.ci, :] = data
 
-        for (n, _, _) in self.matched_product.variables:
-            data = self._get_variable(matched_file, n, matched_inds)
-            self.mp_vars[n][self.ci, :] = data
+        if not self.matched_product is None:
+            for (n, _, _) in self.matched_product.variables:
+                data = self._get_variable(matched_file, n, matched_inds)
+                self.mp_vars[n][self.ci, :] = data
+
+        self.ci += 1
 
 
 ################################################################################
@@ -734,10 +740,14 @@ class ProcessDay:
 
     def _get_matched_files(self, source_file):
 
+        if self.matched_product is None:
+            return [source_file]
+
         t0 = source_file.get_start_time()
         t1 = source_file.get_end_time()
 
         fs = self.matched_product.get_files_in_range(t0, t1)
+        print("matched files: ", fs)
         return fs
 
     def get_colocation(self, lat, lon, matched_files, d_max = 1.0, use_cache = True):
@@ -767,7 +777,7 @@ class ProcessDay:
                   the Modis center pixel in kilometer.
 
         """
-        d = np.finfo("d").max
+        d = 1e100
 
         if use_cache and self.file_cache:
             f = self.file_cache
@@ -775,14 +785,20 @@ class ProcessDay:
             if d_t < d_max:
                 return f, inds, d_t
 
+        inds_min = None
+        f_min = None
+
         for f in matched_files:
             inds, d_t = f.get_colocation(lat, lon, d_max, use_cache)
             if d_t < d:
-                if d < d_max:
-                      self.file_cache = f
-                      break
+                inds_min = inds
+                f_min = f
+                d = d_t
 
-        return f, inds, d
+        if d < d_max:
+            self.file_cache = f_min
+
+        return f_min, inds_min, d
 
     def run(self):
         """
@@ -802,9 +818,10 @@ class ProcessDay:
                 kwargs = {}
 
             for source_inds in source_file.get_colocation_centers(**kwargs):
-                lat = source_file.get_latitudes(*source_inds)
-                lon = source_file.get_longitudes(*source_inds)
+                lat = source_file.get_latitude(*source_inds)
+                lon = source_file.get_longitude(*source_inds)
                 matched_file, matched_inds, d = self.get_colocation(lat, lon, matched_files)
                 if d < 1.0:
                     print("Found colocation: ", d)
                     self.output_file.add_colocation(source_file, source_inds, matched_file, matched_inds)
+        self.output_file.close()
