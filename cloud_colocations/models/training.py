@@ -15,7 +15,7 @@ def load_most_recent(model, output_path):
     if len(model_files) == 0:
         print("No model found in {}.".format(output_path))
         return None
-    indices = np.array([int(m.split("_")[1].split(".")[0]) for m in model_files])
+    indices = np.array([int(os.path.basename(m).split("_")[1].split(".")[0]) for m in model_files])
     print(indices)
     i = np.argmax(indices)
 

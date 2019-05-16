@@ -25,6 +25,7 @@ def list_files():
         gpm_path = os.environ["GPM_COLOCATION_PATH"]
         return glob.glob(os.path.join(gpm_path, "**", "**", "cloud_colocations.nc"))
     except:
+        gpm_path = "/home/simonpf/Dendrite/UserAreas/Simon/cloud_colocations/gpm"
         days = ["0" * (3 - len(str(i))) + str(i) for i in range(100)]
         return [os.path.join(gpm_path, str(2016), d, "cloud_colocations.nc") for d in days]
 
