@@ -20,4 +20,5 @@ output_path = "conv_128_6"
 
 model = ConvNet(13, 1, arch = [128] * 6)
 load_most_recent(model, output_path)
-train_network(data, model, optimizer, criterion, output_path, 1, lambda ds: ds._load_file())
+
+train_network(data, model, optimizer, criterion, output_path, 10, lambda ds: ds._load_file())
