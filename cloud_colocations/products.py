@@ -76,8 +76,9 @@ class FileCache:
         self.temp = False
 
     def __del__(self):
-        if not shutil is None and self.temp:
-            shutil.rmtree(self.path)
+        if not shutil is None:
+            if self.temp:
+                shutil.rmtree(self.path)
 
 file_cache = FileCache()
 

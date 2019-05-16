@@ -23,7 +23,8 @@ tempdir = tempfile.mkdtemp()
 def list_files():
     gpm_path = os.environ["GPM_COLOCATION_PATH"]
     #return glob.glob(os.path.join(gpm_path, "**", "**", "cloud_colocations.nc"))
-    return [os.path.join(gpm_path, str(2016), str(i), "cloud_colocations.nc") for i in range(1, 100)]
+    days = ["0" * (3 - len(str(i))) + str(i) for i in range(100)]
+    return [os.path.join(gpm_path, str(2016), d, "cloud_colocations.nc") for d in days]
 
 def copy_file(f):
     if socket.gethostname() == "titanite":
@@ -42,7 +43,10 @@ class GpmColocations(torch.utils.data.Dataset):
         f = np.random.choice(files)
 
         if not self.file_handle is None:
-            self.file_handle.close()
+            try:
+                self.file_handle.close()
+            except:
+                pass
 
         self.file_handle = Dataset(f, "r")
 
