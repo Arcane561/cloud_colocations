@@ -21,10 +21,12 @@ y_std = np.array([69.32374572753906, 88.8903579711914, 37.72039031982422,
 tempdir = tempfile.mkdtemp()
 
 def list_files():
-    gpm_path = os.environ["GPM_COLOCATION_PATH"]
-    #return glob.glob(os.path.join(gpm_path, "**", "**", "cloud_colocations.nc"))
-    days = ["0" * (3 - len(str(i))) + str(i) for i in range(100)]
-    return [os.path.join(gpm_path, str(2016), d, "cloud_colocations.nc") for d in days]
+    try:
+        gpm_path = os.environ["GPM_COLOCATION_PATH"]
+        return glob.glob(os.path.join(gpm_path, "**", "**", "cloud_colocations.nc"))
+    except:
+        days = ["0" * (3 - len(str(i))) + str(i) for i in range(100)]
+        return [os.path.join(gpm_path, str(2016), d, "cloud_colocations.nc") for d in days]
 
 def copy_file(f):
     if socket.gethostname() == "titanite":
