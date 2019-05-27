@@ -59,7 +59,7 @@ def train_network(data_set,
     for i in range(n_epochs):
 
         dataset_callback(data_set)
-        data_loader = DataLoader(data_set, batch_size = 64)
+        data_loader = DataLoader(data_set, batch_size = 64, shuffle = True)
 
 
         epoch_loss = 0.0

@@ -40,7 +40,7 @@ def copy_file(f, syncd = False):
         f = NamedTemporaryFile(delete = False)
         out_path = f.name
         p = subprocess.Popen(["scp", src_path, out_path])
-        if not syncd:
+        if syncd:
             p.wait()
             return out_path
         else:
@@ -52,17 +52,27 @@ class GpmColocations(torch.utils.data.Dataset):
     def _load_file(self):
         files = list_files()
         if not self.file_handle is None:
-            self.file_hanlde.close()
-            os.unlink(self.file_handle.filepath())
+            fp = self.file_handle.filepath()
+            self.file_handle.close()
+            if self._temp_file:
+                os.unlink(fp)
+
         if not self._next_file is None:
-            p = self._next_file[0].wait()
-            f = self._next_file[1]
+            if self._next_file is tuple:
+                p = self._next_file[0].wait()
+                f = self._next_file[1]
+            else:
+                f = self._next_file
             self.file_handle = Dataset(f, "r")
         else:
             f = copy_file(np.random.choice(files))
             self.file_handle = Dataset(f, "r")
 
-        self._next_file = copy_file(np.random.choice(files), syncd = True)
+        self._next_file = copy_file(np.random.choice(files), syncd = False)
+        if self._next_file is tuple:
+            self._temp_file = True
+        else:
+            self._temp_file = False
 
 
     def __init__(self, transform = None):
