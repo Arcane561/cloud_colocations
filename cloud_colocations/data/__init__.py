@@ -31,14 +31,14 @@ def list_files():
         days = ["0" * (3 - len(str(i))) + str(i) for i in range(1, 365)]
         return [os.path.join(gpm_path, str(2016), d, "cloud_colocations.nc") for d in days]
 
-def copy_file(f, async = False):
+def copy_file(f, syncd = False):
     if socket.gethostname() == "titanite":
         return f
     else:
         src_path = "simonpf@titanite.rss.chalmers.se:" + f
         out_path = "data.nc"
         p = subprocess.Popen(["scp", src_path, out_path])
-        if not async:
+        if not syncd:
             p.wait()
             return out_path
         else:
@@ -57,7 +57,7 @@ class GpmColocations(torch.utils.data.Dataset):
             f = copy_file(np.random.choice(files))
             self.file_handle = Dataset(f, "r")
 
-        self._next_file = copy_file(np.random.choice(files), async = True)
+        self._next_file = copy_file(np.random.choice(files), syncd = True)
 
 
     def __init__(self, transform = None):

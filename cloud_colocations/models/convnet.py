@@ -102,7 +102,7 @@ class Decoder(nn.Module):
 class CNet(nn.Module):
 
     def _make_center(self, c_center, l_center):
-        modules = [nn.Conv2d(in_channels  = c_center, out_channels = c_center, kernel_size = self.ks, padding = 1),
+        modules = [nn.Conv2d(in_channels  = c_center, out_channels = c_center, kernel_size = 1, padding = 1),
                    nn.BatchNorm2d(c_center),
                    nn.ReLU()] * l_center
         self.center = nn.Sequential(*modules)
