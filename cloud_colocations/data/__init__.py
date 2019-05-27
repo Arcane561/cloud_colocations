@@ -28,33 +28,36 @@ def list_files():
         return glob.glob(os.path.join(gpm_path, "**", "**", "cloud_colocations.nc"))
     except:
         gpm_path = "/home/simonpf/Dendrite/UserAreas/Simon/cloud_colocations/gpm"
-        days = ["0" * (3 - len(str(i))) + str(i) for i in range(1, 100)]
+        days = ["0" * (3 - len(str(i))) + str(i) for i in range(1, 365)]
         return [os.path.join(gpm_path, str(2016), d, "cloud_colocations.nc") for d in days]
 
-def copy_file(f):
+def copy_file(f, async = False):
     if socket.gethostname() == "titanite":
         return f
     else:
         src_path = "simonpf@titanite.rss.chalmers.se:" + f
-        out_path = os.path.join(tempdir, "data.nc")
         out_path = "data.nc"
-        subprocess.run(["scp", src_path, out_path])
-        return out_path
+        p = subprocess.Popen(["scp", src_path, out_path])
+        if not async:
+            p.wait()
+            return out_path
+        else:
+            return p, out_path
 
 class GpmColocations(torch.utils.data.Dataset):
     """GPM precipitation dataset"""
 
     def _load_file(self):
         files = list_files()
-        f = copy_file(np.random.choice(files))
+        if not self._next_file is None:
+            p = self._next_file[0].wait()
+            f = self._next_file[1]
+            self.file_handle = Dataset(f, "r")
+        else:
+            f = copy_file(np.random.choice(files))
+            self.file_handle = Dataset(f, "r")
 
-        if not self.file_handle is None:
-            try:
-                self.file_handle.close()
-            except:
-                pass
-
-        self.file_handle = Dataset(f, "r")
+        self._next_file = copy_file(np.random.choice(files), async = True)
 
 
     def __init__(self, transform = None):
@@ -66,6 +69,7 @@ class GpmColocations(torch.utils.data.Dataset):
                 on a sample.
         """
         self.file_handle = None
+        self._next_file = None
         self._load_file()
         self.transform = transform
 

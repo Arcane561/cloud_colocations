@@ -5,10 +5,16 @@ import os
 import glob
 import numpy as np
 
-def masked_loss(y_pred, y):
-    dy = torch.abs(y_pred.view(y.size()) - y)
+def masked_loss(y_pred, y, tau = 0.5):
+    dy = y_pred.view(y.size()) - y
     dy = torch.where(y >= 0.0, dy, torch.zeros(dy.size()))
-    return dy.mean()
+    dy = (y_pred > y, (1 - tau) * dy, tau * dy)
+    return dy.sum()
+
+def quantile_loss(y_pred, y, quantiles):
+    l = torch.zeros(1)
+    for q in quantiles:
+        l += masked_loss(y_pred, y, tau)
 
 def load_most_recent(model, output_path):
     model_files = glob.glob(os.path.join(output_path, "model_*.pt"))

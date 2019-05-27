@@ -876,11 +876,10 @@ class GPM(Combined):
 
         try:
             minimum = self.precip.min()
+            self.precip[:, [0, -1]] = minimum
+            self.precip[[0, -1], :] = minimum
         except:
-            minimum = -1
-
-        self.precip[:, [0, -1]] = minimum
-        self.precip[[0, -1], :] = minimum
+            pass
 
         swath_dpr = geometry.SwathDefinition(lats = self.lat_dpr, lons = self.lon_dpr)
         swath_gmi = geometry.SwathDefinition(lats = self.gmi_file.lat_s1, lons = self.gmi_file.lon_s1)
