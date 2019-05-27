@@ -6,6 +6,7 @@ import torch.utils
 import torch.utils.data
 import tempfile
 import socket
+from tempfile import NamedTemporaryFile
 import subprocess
 from netCDF4 import Dataset
 
@@ -36,7 +37,8 @@ def copy_file(f, syncd = False):
         return f
     else:
         src_path = "simonpf@titanite.rss.chalmers.se:" + f
-        out_path = "data.nc"
+        f = NamedTemporaryFile(delete = False)
+        out_path = f.name
         p = subprocess.Popen(["scp", src_path, out_path])
         if not syncd:
             p.wait()
@@ -49,6 +51,9 @@ class GpmColocations(torch.utils.data.Dataset):
 
     def _load_file(self):
         files = list_files()
+        if not self.file_handle is None:
+            self.file_hanlde.close()
+            os.unlink(self.file_handle.filepath())
         if not self._next_file is None:
             p = self._next_file[0].wait()
             f = self._next_file[1]
@@ -77,12 +82,16 @@ class GpmColocations(torch.utils.data.Dataset):
         return self.file_handle.dimensions["colocation_index"].size
 
     def __getitem__(self, idx):
-        x = np.transpose(self.file_handle["gmi"]["y"][idx, :, :, :], axes = (2, 0, 1))
-        x = torch.tensor((x - y_mean.reshape(-1, 1, 1)) / y_std.reshape(-1, 1, 1)).float()
-        y = torch.tensor(self.file_handle["dpr"]["rr"][idx, :, :]).float()
-        y[:27, :] = -1
-        y[-27:, :] = -1
-        y[:, -27:] = -1
-        y[:, :27] = -1
+        try:
+            x = np.transpose(self.file_handle["gmi"]["y"][idx, :, :, :], axes = (2, 0, 1))
+            x = torch.tensor((x - y_mean.reshape(-1, 1, 1)) / y_std.reshape(-1, 1, 1)).float()
+            y = torch.tensor(self.file_handle["dpr"]["rr"][idx, :, :]).float()
+            y[:27, :] = -1
+            y[-27:, :] = -1
+            y[:, -27:] = -1
+            y[:, :27] = -1
+        except:
+            print("Error getting data from file {0}.".format(self.file_handle))
+            self._load_file()
 
         return x, y
