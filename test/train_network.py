@@ -14,11 +14,12 @@ from cloud_colocations.data import GpmColocations
 from cloud_colocations.models.training import masked_loss, train_network, load_most_recent
 
 data = GpmColocations()
-optimizer = torch.optim.Adam(model.parameters())
-criterion = masked_loss
-output_path = "conv_128_6"
-
 model = ConvNet(13, 1, arch = [128] * 6)
+output_path = "conv_128_6"
 load_most_recent(model, output_path)
+
+optimizer = torch.optim.Adam(model.parameters(), lr = 0.005)
+criterion = masked_loss
+
 
 train_network(data, model, optimizer, criterion, output_path, 10, lambda ds: ds._load_file())

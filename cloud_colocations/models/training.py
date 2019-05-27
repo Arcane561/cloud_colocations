@@ -37,6 +37,10 @@ def train_network(data_set,
         os.makedirs(output_path)
 
     cuda = torch.cuda.is_available()
+    if cuda:
+        print("Running on GPU.")
+    else:
+        print("Running on CPU.")
 
     log_file = os.path.join(output_path, "training_log.txt")
     if os.path.isfile(log_file):
@@ -69,7 +73,7 @@ def train_network(data_set,
 
             print("Epoch {0}, batch {1}: {2}".format(i, j, loss.float()))
 
-        log_file.write("{0}".format(epoch_loss))
+        log_file.write(r"{0}\n".format(epoch_loss))
         model_files = glob.glob(os.path.join(output_path, "model_*.pt"))
         i_m = len(model_files)
         filename = os.path.join(output_path, "model_{0}.pt".format(i_m))
