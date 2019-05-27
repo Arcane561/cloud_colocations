@@ -37,7 +37,7 @@ def copy_file(f, syncd = False):
         return f
     else:
         src_path = "simonpf@titanite.rss.chalmers.se:" + f
-        f = NamedTemporaryFile(delete = False)
+        f = NamedTemporaryFile(delete = False, dir = ".")
         out_path = f.name
         p = subprocess.Popen(["scp", src_path, out_path])
         if syncd:
