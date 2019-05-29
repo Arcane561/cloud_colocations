@@ -114,7 +114,7 @@ class Downsampling(nn.Module):
 class Upsampling(nn.Module):
     def __init__(self, c_in, c_out, kw, skip_connection = None):
         super().__init__()
-        self.us = nn.ConvTranspose2d(c_in, c_out, kw, padding = kw // 2, output_padding = 1, stride = 2)
+        self.us = nn.ConvTranspose2d(c_in, c_out, kw, padding = kw // 2, output_padding = kw // 2, stride = 2)
         self.skip_connection = skip_connection
 
     def forward(self, x):
