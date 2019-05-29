@@ -51,15 +51,15 @@ def train_network(data_set,
 
     log_file = os.path.join(output_path, "training_log.txt")
     if os.path.isfile(log_file):
-        log_file = open(log_file, mode = "r+")
+        log_file = open(log_file, mode = "r+", buffering = 1)
     else:
-        log_file = open(log_file, mode = "w")
+        log_file = open(log_file, mode = "w", buffering = 1)
 
 
     for i in range(n_epochs):
 
         dataset_callback(data_set)
-        data_loader = DataLoader(data_set, batch_size = 64, shuffle = True)
+        data_loader = DataLoader(data_set, batch_size = 128, shuffle = True)
 
 
         epoch_loss = 0.0

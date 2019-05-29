@@ -67,99 +67,104 @@ class Encoder(nn.Module):
             x = m(x)
         return x
 
-class Decoder(nn.Module):
-    def __init__(self, in_channels, out_channels, depth, kernel_width = 3):
-        super(Decoder, self).__init__()
-
+class ConvBlock(nn.Module):
+    def __init__(self, c_in, c, c_out, w = 3, kw = 3, last = False):
+        super().__init__()
         self.modules = []
+        if w <= 1:
+            self.modules += [nn.Sequential(nn.Conv2d(c_in, c_out, kw, padding = kw // 2),
+                                          nn.BatchNorm2d(c_out),
+                                          nn.ReLU())]
+        else:
+            self.modules += [nn.Sequential(nn.Conv2d(c_in, c, kw, padding = kw // 2),
+                                          nn.BatchNorm2d(c_out),
+                                          nn.ReLU())]
 
-        self.modules += [nn.ConvTranspose2d(in_channels, in_channels, kernel_width, padding = 1,
-                                            output_padding = 1, stride = 2)]
-        setattr(self, "conv2d_" + str(0), self.modules[-1])
-        self.modules += [nn.BatchNorm2d(out_channels)]
-        setattr(self, "batch_norm_" + str(0), self.modules[-1])
-        self.modules += [nn.ReLU()]
+            for i in range(1, w - 1):
+                self.modules += [nn.Sequential(nn.Conv2d(c, c, kw, padding = kw // 2),
+                                            nn.BatchNorm2d(c_out),
+                                            nn.ReLU())]
 
-        for i in range(1, depth):
-            self.modules += [nn.Conv2d(out_channels, out_channels, kernel_width, padding = 1)]
-            setattr(self, "conv2d_" + str(i), self.modules[-1])
-            self.modules += [nn.BatchNorm2d(out_channels)]
-            setattr(self, "batch_norm_" + str(i), self.modules[-1])
-            self.modules += [nn.ReLU()]
 
-    def forward(self, x, x2):
-        x = self.modules[0](x)
-        m, n = x2.size()[-2:]
+            if not last:
+                self.modules += [nn.Sequential(nn.Conv2d(c, c_out, kw, padding = kw // 2),
+                                            nn.BatchNorm2d(c_out),
+                                            nn.ReLU())]
+            else:
+                self.modules += [nn.Conv2d(c, c_out, kw, padding = kw // 2)]
 
-        slices = [slice(s) for s in x.size()[:-2]]
-        slices += [slice(0, m)]
-        slices += [slice(0, n)]
-        x = torch.cat([x[tuple(slices)], x2], dim = -3)
-        for m in self.modules[1:]:
+        for i, m in enumerate(self.modules):
+            setattr(self, "module_{0}".format(i), m)
+
+    def forward(self, x):
+        for m in self.modules:
             x = m(x)
+        self.__output__ = x
+        return x
+
+class Downsampling(nn.Module):
+    def __init__(self, c_in, c_out, kw):
+        super().__init__()
+        self.ds = nn.Conv2d(c_in, c_out, kw, padding = kw // 2, stride = 2)
+
+    def forward(self, x):
+        x = self.ds(x)
+        return x
+
+class Upsampling(nn.Module):
+    def __init__(self, c_in, c_out, kw, skip_connection = None):
+        super().__init__()
+        self.us = nn.ConvTranspose2d(c_in, c_out, kw, padding = kw // 2, output_padding = 1, stride = 2)
+        self.skip_connection = skip_connection
+
+    def forward(self, x):
+        x = self.us(x)
+        if self.skip_connection:
+            x2 = self.skip_connection.__output__
+            x = torch.cat([x, x2], -3)
         return x
 
 class CNet(nn.Module):
 
-    def _make_center(self, c_center, l_center):
-        modules = [nn.Conv2d(in_channels  = c_center, out_channels = c_center, kernel_size = 1, padding = 1),
-                   nn.BatchNorm2d(c_center),
-                   nn.ReLU()] * l_center
-        self.center = nn.Sequential(*modules)
-
     def __init__(self,
-                 channels_in,
-                 channels_out,
-                 arch = [(64, 2), (128, 2)],
-                 l_center = 2,
-                 c_center = 128,
+                 c_in, c_out,
+                 arch = [(64, 3), (128, 3)],
                  ks = 3):
+
         super(CNet, self).__init__()
         self.ks = ks
 
-        #
-        # Encoder
-        #
+        self.modules = []
         cs = []
+        bs = []
+        channels_in = c_in
 
-        self.encoders = []
-        in_channels = channels_in
-        for i, (c, d) in enumerate(arch):
-            cs += [in_channels]
-            self.encoders += [Encoder(in_channels, c, d)]
-            setattr(self, "encoder_" + str(i), self.encoders[-1])
-            in_channels = c
+        # First block
 
-        #
-        # Some convolutions in center
-        #
+        w, l = arch[0]
+        self.modules += [ConvBlock(c_in, w, w, self.ks)]
+        c_in = w
 
-        self._make_center(in_channels, l_center)
+        # Remaining blocks
+        for (w, l) in arch[1:]:
+            cs += [c_in]
+            bs += [self.modules[-1]]
+            self.modules += [Downsampling(c_in, w, self.ks)]
+            self.modules += [ConvBlock(w, w, w, self.ks)]
+            c_in = w
 
-        #
-        # Decoder
-        #
+        # Upsampling
+        for c_s, b_s, (w, l) in zip(cs[::-1], bs[::-1], arch[-2::-1]):
+            self.modules += [Upsampling(c_in, w, self.ks, b_s)]
+            self.modules += [ConvBlock(w + c_s, w, w, self.ks)]
+            c_in = w
 
-        self.decoders = []
-        for i, ((c, d), c2) in enumerate(zip(arch[::-1], cs[::-1])):
-            self.decoders += [Decoder(in_channels, in_channels + c2, d)]
-            setattr(self, "decoder_" + str(i), self.decoders[-1])
-            in_channels = in_channels + c2
+        self.modules += [nn.Conv2d(c_in, c_out, self.ks, padding = self.ks // 2)]
 
-        self.last = nn.Conv2d(in_channels = in_channels, out_channels = channels_out,
-                              kernel_size = self.ks, padding = 1)
-
+        for i, m in enumerate(self.modules):
+            setattr(self, "module_{0}".format(i), m)
 
     def forward(self, x):
-        xs = []
-        for e in self.encoders:
-            xs += [x]
-            x = e(x)
-
-        x = self.center(x)
-
-        for d, x2 in zip(self.decoders, xs[::-1]):
-            x = d(x, x2)
-
-        x = self.last(x)
+        for m in self.modules:
+            x = m(x)
         return x

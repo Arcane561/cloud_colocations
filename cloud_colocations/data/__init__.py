@@ -49,6 +49,18 @@ def copy_file(f, syncd = False):
 class GpmColocations(torch.utils.data.Dataset):
     """GPM precipitation dataset"""
 
+    def preprocess(file_handle):
+        g = file_handle["S1"]
+        m, n = g["Tc"].shape[:2]
+        y = np.zeros((1, m, n, 13))
+        y[0, :, :, :9] = g['Tc'][:]
+
+        g = file_handle['S2']
+        y[0, :, :, 9:] = g['Tc'][:]
+        x = np.transpose(y, axes = (0, 3, 1, 2))
+        x = torch.tensor((x - y_mean.reshape(-1, 1, 1)) / y_std.reshape(-1, 1, 1)).float()
+        return x
+
     def _load_file(self):
         files = list_files()
         if not self.file_handle is None:
@@ -74,7 +86,6 @@ class GpmColocations(torch.utils.data.Dataset):
         else:
             self._temp_file = False
 
-
     def __init__(self, transform = None):
         """
         Args:
@@ -94,14 +105,22 @@ class GpmColocations(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         try:
             x = np.transpose(self.file_handle["gmi"]["y"][idx, :, :, :], axes = (2, 0, 1))
-            x = torch.tensor((x - y_mean.reshape(-1, 1, 1)) / y_std.reshape(-1, 1, 1)).float()
-            y = torch.tensor(self.file_handle["dpr"]["rr"][idx, :, :]).float()
+            x = (x - y_mean.reshape(-1, 1, 1)) / y_std.reshape(-1, 1, 1)
+            y = self.file_handle["dpr"]["rr"][idx, :, :]
             y[:27, :] = -1
             y[-27:, :] = -1
             y[:, -27:] = -1
             y[:, :27] = -1
-        except:
-            print("Error getting data from file {0}.".format(self.file_handle))
-            self._load_file()
 
-        return x, y
+            p = np.random.uniform()
+            if p < 0.5:
+                x = np.array(x[:, ::-1, :])
+                y = np.array(y[::-1, :])
+            p = np.random.uniform()
+            if p < 0.5:
+                x = np.array(x[:, :, ::-1])
+                y = np.array(y[:, ::-1])
+        except Exception as e:
+            raise e
+
+        return torch.tensor(x[:, 2:-1, 2:-1]).float(), torch.tensor(y[2:-1, 2:-1]).float()
