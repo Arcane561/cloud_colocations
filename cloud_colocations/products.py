@@ -14,6 +14,7 @@ from ftplib   import FTP
 from datetime import datetime, timedelta
 from cloud_colocations import settings
 import os, re, requests, shutil, tempfile
+import numpy as np
 
 def ensure_extension(path, ext):
     if not any([path[-len(e):] == e for e in ext]):
@@ -273,15 +274,19 @@ class DataProduct(metaclass = ABCMeta):
         year = t.year
         day  = int(t.strftime("%j"))
         files += self.get_files(year, day)
+        print(files)
 
         ts  = [self.name_to_date(f) for f in files]
         dts = [tf - t for tf in ts]
+        dts = np.array([dt.total_seconds() for dt in dts])
+        inds = np.argsort(dts)
+        indices = np.where(dts[inds] < 0.0)[0]
 
-        indices = [i for i,dt in enumerate(dts) if dt.total_seconds() > 0.0]
         if len(indices) == 0:
             ind = len(dts) - 1
         else:
-            ind = indices[0] - 1
+            ind = inds[indices[-1]]
+        print(ind)
 
         return files[ind]
 
