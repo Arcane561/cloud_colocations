@@ -46,6 +46,8 @@ def train_network(data_set,
     cuda = torch.cuda.is_available()
     if cuda:
         print("Running on GPU.")
+        model.cuda()
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
     else:
         print("Running on CPU.")
 
@@ -67,8 +69,8 @@ def train_network(data_set,
         for j, (x, y) in enumerate(data_loader):
 
             if cuda:
-                x.cuda()
-                y.cuda()
+                x = x.cuda()
+                y = y.cuda()
 
             y_pred = model(x)
             optimizer.zero_grad()
