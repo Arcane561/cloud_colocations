@@ -97,8 +97,11 @@ class ConvBlock(nn.Module):
             setattr(self, "module_{0}".format(i), m)
 
     def forward(self, x):
+        x_in = x
         for m in self.modules:
             x = m(x)
+        x = torch.cat([x, x_in], -3)
+
         self.__output__ = x
         return x
 
@@ -143,7 +146,7 @@ class CNet(nn.Module):
 
         w, l = arch[0]
         self.modules += [ConvBlock(c_in, w, w, self.ks)]
-        c_in = w
+        c_in = w + c_in
 
         # Remaining blocks
         for (w, l) in arch[1:]:
@@ -151,13 +154,13 @@ class CNet(nn.Module):
             bs += [self.modules[-1]]
             self.modules += [Downsampling(c_in, w, self.ks)]
             self.modules += [ConvBlock(w, w, w, self.ks)]
-            c_in = w
+            c_in = w + c_in
 
         # Upsampling
         for c_s, b_s, (w, l) in zip(cs[::-1], bs[::-1], arch[-2::-1]):
             self.modules += [Upsampling(c_in, w, self.ks, b_s)]
             self.modules += [ConvBlock(w + c_s, w, w, self.ks)]
-            c_in = w
+            c_in = w + c_in
 
         self.modules += [nn.Conv2d(c_in, c_out, self.ks, padding = self.ks // 2)]
 
