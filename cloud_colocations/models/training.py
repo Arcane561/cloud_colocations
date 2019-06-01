@@ -9,7 +9,7 @@ def masked_loss(y_pred, y, tau = 0.5):
     dy = torch.abs(y_pred.view(y.size()) - y)
     dy = torch.where(y >= 0.0, dy, torch.zeros(dy.size()))
     dy = torch.where(y_pred > y, (1 - tau) * dy, tau * dy)
-    return dy.sum()
+    return dy.mean()
 
 def quantile_loss(y_pred, y, quantiles):
     l = torch.tensor(0.0)
@@ -66,21 +66,22 @@ def train_network(data_set,
 
         epoch_loss = 0.0
 
-        for j, (x, y) in enumerate(data_loader):
+        for j in range(5):
+            for k, (x, y) in enumerate(data_loader):
 
-            if cuda:
-                x = x.cuda()
-                y = y.cuda()
+                if cuda:
+                    x = x.cuda()
+                    y = y.cuda()
 
-            y_pred = model(x)
-            optimizer.zero_grad()
-            loss = criterion(y_pred, y)
-            loss.backward()
-            optimizer.step()
+                y_pred = model(x)
+                optimizer.zero_grad()
+                loss = criterion(y_pred, y)
+                loss.backward()
+                optimizer.step()
 
-            epoch_loss += loss.float()
+                epoch_loss += loss.float()
 
-            print("Epoch {0}, batch {1}: {2}".format(i, j, loss.float()))
+                print("Epoch {0}.{1}, batch {3}: {4}".format(i, j, k, loss.float()))
 
         log_file.write("{0}\n".format(epoch_loss))
         model_files = glob.glob(os.path.join(output_path, "model_*.pt"))

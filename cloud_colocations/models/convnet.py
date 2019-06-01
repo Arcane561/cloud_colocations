@@ -72,26 +72,27 @@ class ConvBlock(nn.Module):
         super().__init__()
         self.modules = []
         if w <= 1:
-            self.modules += [nn.Sequential(nn.Conv2d(c_in, c_out, kw, padding = kw // 2),
-                                          nn.BatchNorm2d(c_out),
-                                          nn.ReLU())]
+            self.modules += [nn.Sequential(nn.BatchNorm2d(c_in),
+                                           nn.ReLU(),
+                                           nn.Conv2d(c_in, c_out, kw, padding = kw // 2))]
         else:
-            self.modules += [nn.Sequential(nn.Conv2d(c_in, c, kw, padding = kw // 2),
-                                          nn.BatchNorm2d(c_out),
-                                          nn.ReLU())]
+            self.modules += [nn.Sequential(nn.BatchNorm2d(c_in),
+                                           nn.ReLU(),
+                                           nn.Conv2d(c_in, c, kw, padding = kw // 2))]
 
             for i in range(1, w - 1):
-                self.modules += [nn.Sequential(nn.Conv2d(c, c, kw, padding = kw // 2),
-                                            nn.BatchNorm2d(c_out),
-                                            nn.ReLU())]
+                self.modules += [nn.Sequential(nn.BatchNorm2d(c),
+                                               nn.ReLU(),
+                                               nn.Conv2d(c, c, kw, padding = kw // 2))]
 
 
             if not last:
-                self.modules += [nn.Sequential(nn.Conv2d(c, c_out, kw, padding = kw // 2),
-                                            nn.BatchNorm2d(c_out),
-                                            nn.ReLU())]
+                self.modules += [nn.Sequential(nn.BatchNorm2d(c_out),
+                                               nn.ReLU(),
+                                               nn.Conv2d(c, c_out, kw, padding = kw // 2))]
             else:
-                self.modules += [nn.Conv2d(c, c_out, kw, padding = kw // 2)]
+                self.modules += [nn.BatchNorm2d(c),
+                                 nn.Conv2d(c, c_out, kw, padding = kw // 2)]
 
         for i, m in enumerate(self.modules):
             setattr(self, "module_{0}".format(i), m)
@@ -162,7 +163,8 @@ class CNet(nn.Module):
             self.modules += [ConvBlock(w + c_s, w, w, self.ks)]
             c_in = w + w + c_s
 
-        self.modules += [nn.Conv2d(c_in, c_out, self.ks, padding = self.ks // 2)]
+        self.modules += [nn.BatchNorm2d(c_in),
+                         nn.Conv2d(c_in, c_out, self.ks, padding = self.ks // 2)]
 
         for i, m in enumerate(self.modules):
             setattr(self, "module_{0}".format(i), m)
