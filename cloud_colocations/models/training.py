@@ -66,22 +66,21 @@ def train_network(data_set,
 
         epoch_loss = 0.0
 
-        for j in range(5):
-            for k, (x, y) in enumerate(data_loader):
+        for k, (x, y) in enumerate(data_loader):
 
-                if cuda:
-                    x = x.cuda()
-                    y = y.cuda()
+            if cuda:
+                x = x.cuda()
+                y = y.cuda()
 
-                y_pred = model(x)
-                optimizer.zero_grad()
-                loss = criterion(y_pred, y)
-                loss.backward()
-                optimizer.step()
+            y_pred = model(x)
+            optimizer.zero_grad()
+            loss = criterion(y_pred, y)
+            loss.backward()
+            optimizer.step()
 
-                epoch_loss += loss.float()
+            epoch_loss += loss.float()
 
-                print("Epoch {0}.{1}, batch {3}: {4}".format(i, j, k, loss.float()))
+            print("Epoch {0}, batch {1}: {2}".format(i, j, loss.float()))
 
         log_file.write("{0}\n".format(epoch_loss))
         model_files = glob.glob(os.path.join(output_path, "model_*.pt"))
