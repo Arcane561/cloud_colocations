@@ -66,7 +66,7 @@ def train_network(data_set,
 
         epoch_loss = 0.0
 
-        for k, (x, y) in enumerate(data_loader):
+        for j, (x, y) in enumerate(data_loader):
 
             if cuda:
                 x = x.cuda()
