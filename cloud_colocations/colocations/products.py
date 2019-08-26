@@ -1,7 +1,6 @@
 """
-The :code:`products` module contains code for the representation of data
-products providing and abstract interface to lookup and download data
-files.
+The :code:`products` module provides interfaces for different data
+products to lookup and download data specific files.
 
 Atributes:
 
@@ -274,7 +273,6 @@ class DataProduct(metaclass = ABCMeta):
         year = t.year
         day  = int(t.strftime("%j"))
         files += self.get_files(year, day)
-        print(files)
 
         ts  = [self.name_to_date(f) for f in files]
         dts = [tf - t for tf in ts]
@@ -286,7 +284,6 @@ class DataProduct(metaclass = ABCMeta):
             ind = len(dts) - 1
         else:
             ind = inds[indices[-1]]
-        print(ind)
 
         return files[ind]
 
@@ -301,7 +298,6 @@ class DataProduct(metaclass = ABCMeta):
             dest(str): Where to store the file.
         """
         cache_hit = file_cache.get(filename)
-        print("Downloading file: ", cache_hit, filename)
         if not cache_hit is None:
             return cache_hit
         else:
@@ -355,17 +351,17 @@ class GesdiscProduct(DataProduct):
         return t
 
     def download(self, filename, dest):
-
-        print("Downloading Gesdisc file: ", filename, dest)
         t = self.name_to_date(filename)
         year = t.year
         day  = t.strftime("%j")
         day  = "0" * (3 - len(day)) + day
 
         request_string = self._request_string.format(year = year, day = day, filename = filename)
+        print(request_string)
 
 
         r = requests.get(request_string)
+        print(r)
         with open(dest, 'wb') as f:
             for chunk in r:
                 f.write(chunk)
@@ -490,6 +486,11 @@ def caliop_name_to_date(s):
     s = s[i + 1 : i + j].replace("-", ".")
     return datetime.strptime(s, "%Y.%m.%dT%H.%M")
 
+def dardar_name_to_date(s):
+    """Convert DARDAR name to date"""
+    date = s.split("_")[2]
+    return datetime.strptime(date, "%Y.%m.%dT%H.%M")
+
 def cloudsat_name_to_date(s):
     """Convert CLOUDSAT name to date"""
     s = os.path.basename(s)
@@ -505,6 +506,7 @@ modis      = IcareProduct("SPACEBORNE/MODIS/MYD021KM", modis_name_to_date)
 modis_geo  = IcareProduct("SPACEBORNE/MODIS/MYD03", modis_name_to_date)
 cloudsat   = IcareProduct("SPACEBORNE/CLOUDSAT/2B-CLDCLASS.v05.06", cloudsat_name_to_date)
 
-dpr     = GesdiscProduct("GPM_L2", "GPM_2ADPR.06", )
-gpm_cmb = GesdiscProduct("GPM_L2", "GPM_2BCMB.06")
-gpm_gmi = GesdiscProduct("GPM_L1C", "GPM_1CGPMGMI_R.05")
+dpr_2a_gpr      = GesdiscProduct("GPM_L2", "GPM_2ADPR.06", )
+gpm_2b_cmb      = GesdiscProduct("GPM_L2", "GPM_2BCMB.06")
+gpm_2a_gprofgmi = GesdiscProduct("GPM_L2", "GPM_2AGPROFGPMGMI.05")
+gpm_1c_r        = GesdiscProduct("GPM_L1C", "GPM_1CGPMGMI_R.05")
