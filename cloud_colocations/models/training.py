@@ -27,7 +27,12 @@ def load_most_recent(model, output_path):
     i = np.argmax(indices)
 
     print("Loading most recent model {}.".format(model_files[i]))
-    model.load_state_dict(torch.load(model_files[i]))
+    cuda = torch.cuda.is_available()
+    if cuda:
+        model.load_state_dict(torch.load(model_files[i]))
+    else:
+        model.load_state_dict(torch.load(model_files[i], map_location = "cpu"))
+
     model.eval()
 
 

@@ -9,9 +9,9 @@ import numpy as np
 from pyhdf.SD import SD, SDC
 from h5py import File
 
-from cloud_colocations.products import file_cache, caliop, modis, modis_geo,\
-    cloudsat, gpm_gmi, dpr, gpm_cmb, get_cache_path
-import cloud_colocations.utils as utils
+from cloud_colocations.colocations import utils
+from cloud_colocations.colocations.products import file_cache, caliop, modis,\
+    modis_geo, cloudsat, gpm_gmi, dpr, gpm_cmb, get_cache_path
 
 from datetime import datetime
 

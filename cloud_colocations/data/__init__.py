@@ -51,12 +51,21 @@ class GpmColocations(torch.utils.data.Dataset):
     def preprocess(file_handle):
         g = file_handle["S1"]
         m, n = g["Tc"].shape[:2]
-        y = np.zeros((1, m, n, 13))
-        y[0, :, :, :9] = g['Tc'][:]
+        mm = 16 * ((m // 16) + 1)
+        ml = (mm - m) // 2 
+        mr = ml + m
+        nn = 16 * ((n // 16) + 1)
+        nl = (nn - n) // 2
+        nr = nl + n
+        y = np.zeros((1, mm, nn, 13))
+
+        y[0, ml:mr, nl:nr, :9] = g['Tc'][:]
 
         g = file_handle['S2']
-        y[0, :, :, 9:] = g['Tc'][:]
+        y[0, ml:mr, nl:nr, 9:] = g['Tc'][:]
         x = np.transpose(y, axes = (0, 3, 1, 2))
+        x = np.maximum(x, 0.0)
+        x = np.minimum(x, 500.0)
         x = torch.tensor((x - y_mean.reshape(-1, 1, 1)) / y_std.reshape(-1, 1, 1)).float()
         return x
 

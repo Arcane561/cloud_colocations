@@ -7,8 +7,9 @@
 #
 
 import argparse
-parser = argparse.ArgumentParser(prog = "cloud_colocations",
-                                 description = "Extract A-train co-locations")
+parser = argparse.ArgumentParser(prog = "gpm_colocations",
+                                 description = "Extract radar/radiometer "
+                                 "colocations from the GPM core observatory.")
 parser.add_argument('start_day', metavar = 'start_day', type = int, nargs = 1)
 parser.add_argument('end_day',   metavar = 'end_day',   type = int, nargs = 1)
 parser.add_argument('year',      metavar = 'year',      type = int, nargs = 1)
