@@ -12,7 +12,7 @@ from h5py import File
 
 from cloud_colocations.colocations import utils
 from cloud_colocations.colocations.products import file_cache, caliop, modis,\
-    modis_geo, cloudsat, gpm_gmi, dpr, gpm_cmb, get_cache_path
+    modis_geo, cloudsat, gpm_2b_cmb, gpm_2a_gprofgmi, get_cache_path, gpm_1c_r
 
 from datetime import datetime
 
@@ -762,7 +762,7 @@ class TWOBCLDCLASS(Hdf4File, ProductFile):
 
 class GPMGMI1C(ProductFile):
 
-    product = gpm_gmi
+    product = gpm_2a_gprofgmi
     dn = 64
     name = "gmi"
     dimensions = [("along_track", dn),
@@ -857,7 +857,7 @@ class GPM(Combined):
 
     kernel = np.array(
         [[8.51724e-11, 3.30060e-08, 2.15373e-06,  2.51412e-05,  5.63712e-05,
-          2.51412e-05, 2.15373e-06,  3.30060e-08  8.51724e-11],
+          2.51412e-05, 2.15373e-06,  3.30060e-08,  8.51724e-11],
          [6.67905e-10, 2.58826e-07, 1.68892e-05, 0.000197153, 0.000442052,
           0.000197153, 1.68892e-05, 2.58826e-07, 6.67905e-10],
          [2.90088e-09, 1.12415e-06, 7.33538e-05, 0.000856283, 0.00191994,
@@ -920,7 +920,7 @@ class GPM(Combined):
             self.precip[[0, -1], :] = minimum
         except:
             pass
-swath_dpr = geometry.SwathDefinition(lats = self.lat_dpr, lons = self.lon_dpr)
+        swath_dpr = geometry.SwathDefinition(lats = self.lat_dpr, lons = self.lon_dpr)
         swath_gmi = geometry.SwathDefinition(lats = self.gmi_file.lat_s1, lons = self.gmi_file.lon_s1)
         self.precip_r = kd_tree.resample_nearest(swath_dpr, self.precip, swath_gmi, radius_of_influence = 5e3)
 
@@ -968,7 +968,7 @@ swath_dpr = geometry.SwathDefinition(lats = self.lat_dpr, lons = self.lon_dpr)
 
 class GPMCMB(ProductFile):
 
-    product = gpm_cmb
+    product = gpm_2b_cmb
     name = "gpm_combined"
     dimensions = [("along_track", 49),
                   ("across_track", 49)]
