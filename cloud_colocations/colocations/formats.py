@@ -5,6 +5,7 @@ of the file formats of the different data products.
 
 import os
 import numpy as np
+import scipy as sp
 
 from pyhdf.SD import SD, SDC
 from h5py import File
@@ -762,10 +763,10 @@ class TWOBCLDCLASS(Hdf4File, ProductFile):
 class GPMGMI1C(ProductFile):
 
     product = gpm_gmi
-    dn = 50
+    dn = 64
     name = "gmi"
-    dimensions = [("along_track", 2 * dn + 1),
-                  ("across_track", 2 * dn + 1),
+    dimensions = [("along_track", dn),
+                  ("across_track", dn),
                   ("channels", 13)]
     variables = [("y", "f4", ("along_track", "across_track", "channels")),
                  ("latitudes", "f4", ("along_track", "across_track")),
@@ -789,10 +790,10 @@ class GPMGMI1C(ProductFile):
     def _get_indices(self, i, j, dn):
         if dn is None:
             dn = GPMGMI1C.dn
-        i_start = i - dn
-        i_end   = i + dn + 1
-        j_start = j - dn
-        j_end   = j + dn + 1
+        i_start = i - dn // 2
+        i_end   = i + dn // 2
+        j_start = j - dn // 2
+        j_end   = j + dn // 2
         return i_start, i_end, j_start, j_end, dn
 
     def get_start_time(self,):
@@ -848,31 +849,70 @@ class GPMGMI1C(ProductFile):
     def get_colocation_centers(self, dn = 50):
         n  = self.lat_s1.shape[0]
         c  = self.lat_s1.shape[1] // 2 - 1
-        for i in range(dn, n - dn, dn // 2):
-            self.cache = [(i - dn), (i + dn)]
+        for i in range(dn // 2, n - dn // 2, dn):
+            self.cache = [(i - dn // 2), (i + dn // 2)]
             yield (i, c)
 
 class GPM(Combined):
 
-    products = [gpm_gmi, dpr]
-    name = "dpr"
+    kernel = np.array(
+        [[8.51724e-11, 3.30060e-08, 2.15373e-06,  2.51412e-05,  5.63712e-05,
+          2.51412e-05, 2.15373e-06,  3.30060e-08  8.51724e-11],
+         [6.67905e-10, 2.58826e-07, 1.68892e-05, 0.000197153, 0.000442052,
+          0.000197153, 1.68892e-05, 2.58826e-07, 6.67905e-10],
+         [2.90088e-09, 1.12415e-06, 7.33538e-05, 0.000856283, 0.00191994,
+          0.000856283, 7.33538e-05, 1.12415e-06,  2.90088e-09],
+         [6.99457e-09, 2.71053e-06, 0.000176870, 0.00206466, 0.00462935,
+          0.00206466, 0.000176870, 2.71053e-06,  6.99457e-09],
+         [9.37759e-09, 3.63400e-06, 0.000237129, 0.00276809, 0.00620655,
+          0.00276809, 0.000237129, 3.63400e-06,  9.37760e-09],
+         [6.99457e-09, 2.71053e-06, 0.000176870, 0.00206466, 0.00462934,
+          0.00206466, 0.000176870, 2.71053e-06,  6.99457e-09],
+         [2.90088e-09, 1.12415e-06, 7.33538e-05, 0.000856283, 0.00191994,
+          0.000856283, 7.33538e-05, 1.12415e-06,  2.90088e-09],
+         [6.67905e-10, 2.58826e-07, 1.68892e-05, 0.000197153, 0.000442052,
+          0.000197153, 1.68892e-05, 2.58826e-07,  6.67905e-10],
+         [8.51723e-11, 3.30060e-08, 2.15373e-06, 2.51412e-05, 5.63712e-05,
+          2.51412e-05, 2.15373e-06, 3.30060e-08,  8.51724e-11]]
+    )
+
+    products = [gpm_1c_r, gpm_2b_cmb]
+    name = "combined"
     dimensions = [("along_track", 2 * GPMGMI1C.dn + 1),
                   ("across_track", 2 * GPMGMI1C.dn + 1)]
     variables = [("rr", "f4", ("along_track", "across_track"))]
+    apply_smoothing = True
 
-    def __init__(self, gmi_file, dpr_file):
+    def __init__(self, gpm_1c_r_file, gpm_cmb_file):
         from pyresample import kd_tree, geometry
         self.dn = GPMGMI1C.dn
 
         # GMI for remapping
         self.gmi_file = GPMGMI1C(gmi_file)
 
-        # DPR
-        self.dpr_file = File(dpr_file)
-        g = self.dpr_file['NS']
-        self.lat_dpr = g['Latitude'][:]
-        self.lon_dpr = g['Longitude'][:]
-        self.precip  = g['SLV']['precipRateNearSurface'][:]
+        # Combined data
+        self.gpm_cmb_file = File(gpm_cmb_file)
+        g = self.gpm_cmb_file['MS']
+        self.lat_c = g['Latitude'][:]
+        self.lon_c = g['Longitude'][:]
+
+        self.sp = g['surfPrecipTotRate'][:]
+        self.sp[self.sp == -9999.9] = 0.0
+        self.lrf = g['surfLiqRateFrac'][:]
+        self.iwc = g['cloudLiqWaterCont'][:]
+        self.lwc = g['cloudLiqWaterCont'][:]
+        self.pwc = g['precipTotWaterCont'][:]
+
+        if GPM.apply_smoothing:
+            self.lat_c = sp.signal.convolve(self.lat_c, GPM.kernel)
+            self.lon_c = sp.signal.convolve(self.lon_c, GPM.kernel)
+            self.sp = sp.signal.convolve(self.sp, GPM.kernel)
+            self.lrf = sp.signal.convolve(self.lrf, GPM.kernel)
+
+            for i in range(self.iwc.shape[-1]):
+                self.iwc[:, :, i] = sp.signal.convolve(self.iwc[:, :, i], GPM.kernel)
+                self.lwc[:, :, i] = sp.signal.convolve(self.lwc[:, :, i], GPM.kernel)
+                self.pwc[:, :, i] = sp.signal.convolve(self.pwc[:, :, i], GPM.kernel)
 
         try:
             minimum = self.precip.min()
@@ -880,8 +920,7 @@ class GPM(Combined):
             self.precip[[0, -1], :] = minimum
         except:
             pass
-
-        swath_dpr = geometry.SwathDefinition(lats = self.lat_dpr, lons = self.lon_dpr)
+swath_dpr = geometry.SwathDefinition(lats = self.lat_dpr, lons = self.lon_dpr)
         swath_gmi = geometry.SwathDefinition(lats = self.gmi_file.lat_s1, lons = self.gmi_file.lon_s1)
         self.precip_r = kd_tree.resample_nearest(swath_dpr, self.precip, swath_gmi, radius_of_influence = 5e3)
 
