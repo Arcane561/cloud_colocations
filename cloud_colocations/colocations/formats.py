@@ -7,7 +7,6 @@ import os
 import numpy as np
 import scipy as sp
 
-from pyhdf.SD import SD, SDC
 from h5py import File
 
 from cloud_colocations.colocations import utils
@@ -115,6 +114,7 @@ class Hdf4File:
 
             filename(str): The path to the file to open.
         """
+        from pyhdf.SD import SD, SDC
         self.filename = filename
         self.file_handle = SD(self.filename, SDC.READ)
 
@@ -842,6 +842,9 @@ class TWOBCLDCLASS(Hdf4File, ProductFile):
 ################################################################################
 
 class GPMGMI1C(ProductFile):
+    """
+    Class representing files of the remapped GPM GMI Level 1CR data product.
+    """
 
     product = gpm_1c_r
     dn = 64
@@ -1076,10 +1079,29 @@ class GPM(Combined):
         return self.pwc[i_start : i_end, j_start : j_end]
 
 
-class GPMCMB(ProductFile):
+class GPM_2B_CMB(ProductFile):
+    """
+    GPM Level 2B combined data.
+
+    These files contain retrieved precipitation data from the combined
+    retrieval that combined the DPR with GMI observations at the
+    swath center.
+
+    In addition to simplified data access, this class defines the variables
+    that are extracted from found co-locations.
+
+    Attributes:
+
+        product: The corresponding product object (:code:`products.gpm_2b_cmb`)
+
+        dimensions: Dimensions of the co-located data to extract.
+
+        variables: Names and dimensions of the co-located variables variables
+            to extract.
+    """
 
     product = gpm_2b_cmb
-    name = "gpm_combined"
+    name = "gpm_2b_combined"
     dimensions = [("along_track", 49),
                   ("across_track", 49)]
     variables = [("rr", "f4", ("along_track", "across_track")),
@@ -1102,10 +1124,16 @@ class GPMCMB(ProductFile):
         return i_start, i_end, j_start, j_end
 
     def get_latitudes(self, i, j):
+        """
+        Returns the latitudes of the NS swath of the file.
+        """
         i_start, i_end, j_start, j_end = self._get_indices(i, j)
         return self.lat[i_start : i_end, j_start : j_end]
 
     def get_longitudes(self, i, j):
+        """
+        Returns the longitudes of the NS swath of the file.
+        """
         i_start, i_end, j_start, j_end = self._get_indices(i, j)
         return self.lon[i_start : i_end, j_start : j_end]
 
@@ -1118,7 +1146,34 @@ class GPMCMB(ProductFile):
 
         return (i, j), d[i, j]
 
+    def get_minimum_distance(self, lat, lon):
+        """
+        Get minimum distance of a given point from the center
+        of the swath.
+
+        Arguments:
+
+            lat: The latitude of the point to which to compute the distance.
+
+            lon: The longitude of the point to which to compute the distance
+        """
+        i_c = self.lat.shape[1] // 2
+        lats = self.lat[:, i_c]
+        lons = self.lon[:, i_c]
+        d = np.sqrt((lats - lat) ** 2 + (lons - lon) ** 2).min()
+        return d
+
     def get_rr(self, i, j):
+        """
+        Get rain rates around a given co-location center.
+
+        Arguments:
+
+            i: Along-swath index of the co-location index.
+
+            j: Across-swath index of the co-location index.
+
+        """
         dn = 24
         i_start = i - dn
         i_end   = i + dn + 1
@@ -1127,6 +1182,9 @@ class GPMCMB(ProductFile):
         return self.precip[i_start : i_end, :]
 
     def get_colocation_centers(self):
+        """
+        Iterate over co-location centers in this file.
+        """
         dn = 24
         n  = self.lat.shape[0]
         c  = self.lat.shape[1] // 2 - 1
