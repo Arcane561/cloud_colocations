@@ -12,7 +12,7 @@ from h5py import File
 
 from cloud_colocations.colocations import utils
 from cloud_colocations.colocations.products import file_cache, caliop, modis,\
-    modis_geo, cloudsat, gpm_2b_cmb, gpm_2a_gprofgmi, get_cache_path, gpm_1c_r
+    modis_geo, cloudsat, dardar, gpm_2b_cmb, gpm_2a_gprofgmi, get_cache_path, gpm_1c_r
 
 from datetime import datetime
 
@@ -571,6 +571,19 @@ class ModisMyd021km(Hdf4File, ProductFile):
             res[i, :, :] = (res[i, :, :] - offset) * scale_factor
         return res
 
+    def get_composite(self, i_start, i_end, j_start, j_end, band_indices = [0, 2, 3]):
+
+        x = np.zeros((i_end - i_start, j_end - j_start, 3))
+
+        for j, b in enumerate(band_indices):
+            xx = self.data[b, :, :][i_start : i_end, j_start : j_end]
+            x_max = xx.max()
+            x_min = xx.min()
+            x[:, :, j] = (xx - x_min) / (x_max - x_min)
+
+        return x
+
+
 
 class ModisCombined(Combined, ModisMyd021km):
     """
@@ -610,6 +623,74 @@ class ModisCombined(Combined, ModisMyd021km):
         j_end   = j + self.dn + 1
         print(self.data.shape, i_start, i_end, j_start, j_end)
         return self.data[:, i_start : i_end, j_start : j_end]
+
+class DardarCloud(Hdf4File, ProductFile):
+
+    product = dardar
+
+    """
+    The CloudSat cloud layer data format (10 vertical layers in each profile). Cloudlayers are detected based on CPR and CALIOP. 
+
+    This class provide a high-level interface that wraps around the HDF
+    file and provides simplified access to the data that is extracted
+    for the colocations.
+    """
+    def __init__(self, filename):
+        """
+        Create :code:`2B-CLDCLASS-LIDAR` object from file.
+
+        Arguments:
+
+            filename(str): Path to the file to read.
+
+        """
+        super().__init__(filename)
+
+    def get_latitudes(self, c_i = -1, dn = 0):
+        """
+        Get latitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.file_handle.select("latitude")[:]
+        else:
+            return self.file_handle.select("latitude")[c_i - dn : c_i + dn + 1]
+
+    def get_longitudes(self, c_i = -1, dn = 0):
+        """
+        Get longitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.file_handle.select("longitude")[:]
+        else:
+            return self.file_handle.select("longitude")[c_i - dn : c_i + dn + 1]
+
+    def get_radar_reflectivity(self, c_i = -1, dn = 0):
+        """
+        Get longitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.file_handle.select("Z")[:]
+        else:
+            return self.file_handle.select("Z")[c_i - dn : c_i + dn + 1, :]
+
+    def get_lidar_backscatter(self, c_i = -1, dn = 0):
+        """
+        Get longitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.file_handle.select("bscat")[:]
+        else:
+            return self.file_handle.select("bscat")[c_i - dn : c_i + dn + 1, :]
+
+    def get_altitude(self, c_i = -1, dn = 0):
+        """
+        Get longitudes of profile in file as :code:`numpy.ndarray`.
+        """
+        if c_i < 0:
+            return self.file_handle.select("height")[:]
+        else:
+            return self.file_handle.select("height")[c_i - dn : c_i + dn + 1, :]
+
 
 ################################################################################
 # 2B-CLDCLASS-LIDAR    
@@ -762,7 +843,7 @@ class TWOBCLDCLASS(Hdf4File, ProductFile):
 
 class GPMGMI1C(ProductFile):
 
-    product = gpm_2a_gprofgmi
+    product = gpm_1c_r
     dn = 64
     name = "gmi"
     dimensions = [("along_track", dn),
@@ -811,7 +892,7 @@ class GPMGMI1C(ProductFile):
 
     def get_y(self, i, j, dn = None):
         i_start, i_end, j_start, j_end, dn = self._get_indices(i, j, dn)
-        y = np.zeros((2 * dn + 1, 2 * dn + 1, 13))
+        y = np.zeros((dn, dn, 13))
         y[:, :, :9] = self.y_s1[i_start : i_end, j_start : j_end, :]
         y[:, :, 9:] = self.y_s2[i_start : i_end, j_start : j_end, :]
         return y
@@ -879,8 +960,10 @@ class GPM(Combined):
     products = [gpm_1c_r, gpm_2b_cmb]
     name = "combined"
     dimensions = [("along_track", 2 * GPMGMI1C.dn + 1),
-                  ("across_track", 2 * GPMGMI1C.dn + 1)]
-    variables = [("rr", "f4", ("along_track", "across_track"))]
+                  ("across_track", 2 * GPMGMI1C.dn + 1),
+                  ("altitude", 20)]
+    variables = [("sp", "f4", ("along_track", "across_track")),
+                 ("pwc", "f4", ("along_track", "across_track"))]
     apply_smoothing = True
 
     def __init__(self, gpm_1c_r_file, gpm_cmb_file):
@@ -888,7 +971,7 @@ class GPM(Combined):
         self.dn = GPMGMI1C.dn
 
         # GMI for remapping
-        self.gmi_file = GPMGMI1C(gmi_file)
+        self.gmi_file = GPMGMI1C(gpm_1c_r_file)
 
         # Combined data
         self.gpm_cmb_file = File(gpm_cmb_file)
@@ -899,30 +982,52 @@ class GPM(Combined):
         self.sp = g['surfPrecipTotRate'][:]
         self.sp[self.sp == -9999.9] = 0.0
         self.lrf = g['surfLiqRateFrac'][:]
-        self.iwc = g['cloudLiqWaterCont'][:]
-        self.lwc = g['cloudLiqWaterCont'][:]
+        self.lrf[self.lrf == -9999.9] = 0.0
         self.pwc = g['precipTotWaterCont'][:]
+        self.pwc[self.pwc == -9999.9] = 0.0
 
         if GPM.apply_smoothing:
-            self.lat_c = sp.signal.convolve(self.lat_c, GPM.kernel)
-            self.lon_c = sp.signal.convolve(self.lon_c, GPM.kernel)
-            self.sp = sp.signal.convolve(self.sp, GPM.kernel)
-            self.lrf = sp.signal.convolve(self.lrf, GPM.kernel)
+            k = GPM.kernel / np.sum(GPM.kernel)
+            self.lat_c = sp.signal.convolve(self.lat_c, k, "valid")
+            self.lon_c = sp.signal.convolve(self.lon_c, k, "valid")
+            self.sp = sp.signal.convolve(self.sp, k, "valid")
+            self.lrf = sp.signal.convolve(self.lrf, k, "valid")
 
-            for i in range(self.iwc.shape[-1]):
-                self.iwc[:, :, i] = sp.signal.convolve(self.iwc[:, :, i], GPM.kernel)
-                self.lwc[:, :, i] = sp.signal.convolve(self.lwc[:, :, i], GPM.kernel)
-                self.pwc[:, :, i] = sp.signal.convolve(self.pwc[:, :, i], GPM.kernel)
+            pwc_c = np.zeros(self.lrf.shape + self.pwc.shape[-1:])
+            for i in range(self.pwc.shape[-1]):
 
-        try:
-            minimum = self.precip.min()
-            self.precip[:, [0, -1]] = minimum
-            self.precip[[0, -1], :] = minimum
-        except:
-            pass
-        swath_dpr = geometry.SwathDefinition(lats = self.lat_dpr, lons = self.lon_dpr)
+                # 3D convolution kernel
+                n = 9
+                dx = 0.25 * n // 2
+                k3 = np.zeros(k.shape + (n,))
+                y = np.exp(-np.linspace(-dx, dx, n) ** 2)
+                for i in range(n):
+                    k3[:, :, i] = y[i] * GPM.kernel
+
+
+            k3 = k3 / np.sum(k3)
+            self.k3 = k3
+
+            pwc_c = sp.signal.convolve(self.pwc, k3, "valid")
+            self.pwc = pwc_c[:, :, ::4]
+
+        self.sp[:, [0, -1]] = -9999.9
+        self.sp[[0, -1], :] = -9999.9
+        self.lrf[:, [0, -1]] = -9999.9
+        self.lrf[[0, -1], :] = -9999.9
+        self.pwc[:, [0, -1], :] = -9999.9
+        self.pwc[[0, -1], :, :] = -9999.9
+
+        swath_c = geometry.SwathDefinition(lats = self.lat_c, lons = self.lon_c)
         swath_gmi = geometry.SwathDefinition(lats = self.gmi_file.lat_s1, lons = self.gmi_file.lon_s1)
-        self.precip_r = kd_tree.resample_nearest(swath_dpr, self.precip, swath_gmi, radius_of_influence = 5e3)
+
+        self.sp_r = kd_tree.resample_nearest(swath_c, self.sp, swath_gmi, radius_of_influence = 5e3)
+        self.lrf_r = kd_tree.resample_nearest(swath_c, self.lrf, swath_gmi, radius_of_influence = 5e3)
+
+        self.pwc_r = np.zeros(self.sp_r.shape + self.pwc.shape[-1:])
+        for i in range(self.pwc.shape[-1]):
+            self.pwc_r[:, :, i] = kd_tree.resample_nearest(swath_c, self.pwc[:, :, i], swath_gmi,
+                                                           radius_of_influence = 5e3)
 
     def get_latitudes(self, i = -1, j = -1):
         m, n = self.lat_dpr.shape
@@ -954,16 +1059,21 @@ class GPM(Combined):
             return (0, 0), 1e10
         return (i[0], j[0]), 0.0
 
-    def get_rr(self, i, j, dn = 50):
-        i_start = i - dn
-        i_end   = i + dn + 1
-        j_start = j - dn
-        j_end   = j + dn + 1
+    def get_sp(self, i, j):
+        dn = GPMGMI1C.dn
+        i_start = i - dn // 2
+        i_end   = i + dn // 2
+        j_start = j - dn // 2
+        j_end   = j + dn // 2
+        return self.sp_r[i_start : i_end, j_start : j_end]
 
-        lats = self.lat_dpr[i_start : i_end, j_start : j_end]
-        lons = self.lon_dpr[i_start : i_end, j_start : j_end]
-
-        return self.precip_r[i_start : i_end, j_start : j_end]
+    def get_pwc(self, i, j):
+        dn = GPMGMI1C.dn
+        i_start = i - dn // 2
+        i_end   = i + dn // 2
+        j_start = j - dn // 2
+        j_end   = j + dn // 2
+        return self.pwc[i_start : i_end, j_start : j_end]
 
 
 class GPMCMB(ProductFile):

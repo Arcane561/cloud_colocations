@@ -36,7 +36,7 @@ def grid_to_edges(grid):
 
     return new_grid
 
-def plot_composite(modis_data, i, bands = [1, 4, 3], figure = None, subplot = (1,)):
+def plot_composite(modis_data, i, bands = [1, 4, 3], figure = None, subplot = (1,), ax = None):
 
 
     if ax is None:

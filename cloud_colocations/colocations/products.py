@@ -489,7 +489,7 @@ def caliop_name_to_date(s):
 def dardar_name_to_date(s):
     """Convert DARDAR name to date"""
     date = s.split("_")[2]
-    return datetime.strptime(date, "%Y.%m.%dT%H.%M")
+    return datetime.strptime(date, "%Y%j%H%M%S")
 
 def cloudsat_name_to_date(s):
     """Convert CLOUDSAT name to date"""
@@ -502,9 +502,12 @@ def cloudsat_name_to_date(s):
 ################################################################################
 
 caliop     = IcareProduct("SPACEBORNE/CALIOP/01kmCLay.v4.10", caliop_name_to_date)
+dardar     = IcareProduct("SPACEBORNE/MULTI_SENSOR/DARDAR_CLOUD", dardar_name_to_date)
 modis      = IcareProduct("SPACEBORNE/MODIS/MYD021KM", modis_name_to_date)
 modis_geo  = IcareProduct("SPACEBORNE/MODIS/MYD03", modis_name_to_date)
 cloudsat   = IcareProduct("SPACEBORNE/CLOUDSAT/2B-CLDCLASS.v05.06", cloudsat_name_to_date)
+modis_terra     = IcareProduct("SPACEBORNE/MODIS/MOD021KM", modis_name_to_date)
+modis_terra_geo = IcareProduct("SPACEBORNE/MODIS/MOD03", modis_name_to_date)
 
 dpr_2a_gpr      = GesdiscProduct("GPM_L2", "GPM_2ADPR.06", )
 gpm_2b_cmb      = GesdiscProduct("GPM_L2", "GPM_2BCMB.06")
