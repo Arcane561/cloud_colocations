@@ -12,6 +12,7 @@ Atributes:
 from ftplib   import FTP
 from datetime import datetime, timedelta
 from cloud_colocations import settings
+from xml.etree import ElementTree
 import os, re, requests, shutil, tempfile
 import numpy as np
 
@@ -366,7 +367,6 @@ class GesdiscProduct(DataProduct):
             for chunk in r:
                 f.write(chunk)
 
-
 ################################################################################
 # Products from ICARE server
 ################################################################################
@@ -413,8 +413,8 @@ class IcareProduct(DataProduct):
         """
         if not path in self.cache:
             with FTP(IcareProduct.base_url) as ftp:
-                ftp.login(user = settings.login["user"],
-                          passwd = settings.login["password"])
+                ftp.login(user = settings.logins["icare"][0],
+                          passwd = settings.logins["icare"][1])
                 try:
                     ftp.cwd(path)
                 except:
@@ -460,12 +460,85 @@ class IcareProduct(DataProduct):
                             date.strftime("%Y_%m_%d"))
 
         with FTP(self.base_url) as ftp:
-            ftp.login(user = settings.login['user'], passwd = settings.login['password'])
+            ftp.logins(user = settings.logins["icare"][0],
+                       passwd = settings.logins["icare"][1])
             ftp.cwd(path)
             with open(dest, 'wb') as f:
                 ftp.retrbinary('RETR ' + filename, f.write)
 
+################################################################################
+# Opera ground radar
+################################################################################
+
+class OperaRadar(DataProduct):
+    """
+    Base class for data products available from the ICARE ftp server.
+    """
+    base_url = "https://geoservices.meteofrance.fr/services"
+
+    def __init__(self, product):
+        """
+        Create a new product instance.
+
+        Arguments:
+
+        product_path(str): The path of the product. This should point to
+            the folder that bears the product name and contains the directory
+            tree which contains the data files sorted by date.
+
+        name_to_date(function): Funtion to convert filename to datetime object.
+        """
+        self.product = product
+
+        request = OperaRadar.base_url + "/GetAPIKey?username={name}&password={passwd}"
+        name, passwd = settings.logins["opera"]
+        request = request.format(name = name, passwd = passwd)
+        c = http.client.HTTPSConnection("geoservices.meteofrance.fr")
+        c.request("GET", request)
+        r = c.getresponse().read().decode()
+        root = ElementTree.fromstring(r)
+        self.token = root.text
+
+    def get_file(self, time):
+        c = http.client.HTTPSConnection("geoservices.meteofrance.fr")
+        request = OperaRadar.base_url + "/odyssey?product={product}"
+        request += "&time={time}&token={token}&format=HDF5"
+        request = request.format(product = self.product,
+                                 time = time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                 token = self.token)
+        print(request)
+        c.request("GET", request)
+        r = c.getresponse().read()
+        return r
+
+    def get_files(self, year, day):
+        """
+        Return all files from given year and julian day. Files are returned
+        in chronological order sorted by the file timestamp.
+
+        Arguments:
+
+            year(int): The year from which to retrieve the filenames.
+
+            day(int): Day of the year of the data from which to retrieve the
+                the filenames.
+
+        Return:
+
+            List of all HDF files available of this product on the given date.
+        """
+        files = []
+        pattern = "OPERA_{}_{}_{}_{:2d}_{:2d}.hdf"
+        for i in range(24):
+            for j in range(4):
+                files += [pattern.format(self.product, year, day, i, 15 * j)]
+        return files
+
+    def name_to_date(self, name):
+        pass
+
 import http.client
+
 
 ################################################################################
 # Filename to date conversion
