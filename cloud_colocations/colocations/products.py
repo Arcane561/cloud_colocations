@@ -362,7 +362,6 @@ class GesdiscProduct(DataProduct):
 
 
         r = requests.get(request_string)
-        print(r)
         with open(dest, 'wb') as f:
             for chunk in r:
                 f.write(chunk)
@@ -499,7 +498,7 @@ class OperaRadar(DataProduct):
         root = ElementTree.fromstring(r)
         self.token = root.text
 
-    def get_file(self, time):
+    def download(self, time, dest):
         c = http.client.HTTPSConnection("geoservices.meteofrance.fr")
         request = OperaRadar.base_url + "/odyssey?product={product}"
         request += "&time={time}&token={token}&format=HDF5"
@@ -509,7 +508,29 @@ class OperaRadar(DataProduct):
         print(request)
         c.request("GET", request)
         r = c.getresponse().read()
-        return r
+        with open(dest, 'wb') as f:
+            f.write(r)
+        return dest
+
+    def download_file(self, filename):
+        """
+        Download a given product file.
+
+        Arguments:
+
+            filename(str): The name of the file to download.
+
+            dest(str): Where to store the file.
+        """
+        cache_hit = file_cache.get(filename)
+        if not cache_hit is None:
+            return cache_hit
+        else:
+            date = self.name_to_date(filename)
+            filename = ensure_extension(filename, [".hdf", "HDF5"])
+            dest     = os.path.join(file_cache.path, filename)
+            self.download(date, dest)
+        return dest
 
     def get_files(self, year, day):
         """
@@ -528,14 +549,19 @@ class OperaRadar(DataProduct):
             List of all HDF files available of this product on the given date.
         """
         files = []
-        pattern = "OPERA_{}_{}_{}_{:2d}_{:2d}.hdf"
+        pattern = "OPERA_{}_{}_{}_{}_{}.hdf"
         for i in range(24):
             for j in range(4):
-                files += [pattern.format(self.product, year, day, i, 15 * j)]
+                files += [pattern.format(self.product,
+                                         str(year).zfill(2),
+                                         str(day).zfill(3),
+                                         str(i).zfill(2),
+                                         str(15 * j).zfill(2))]
         return files
 
     def name_to_date(self, name):
-        pass
+        s = "_".join(name.split("_")[-4:])
+        return datetime.strptime(s.split(".")[0], "%Y_%j_%H_%M")
 
 import http.client
 
@@ -586,3 +612,7 @@ dpr_2a_gpr      = GesdiscProduct("GPM_L2", "GPM_2ADPR.06", )
 gpm_2b_cmb      = GesdiscProduct("GPM_L2", "GPM_2BCMB.06")
 gpm_2a_gprofgmi = GesdiscProduct("GPM_L2", "GPM_2AGPROFGPMGMI.05")
 gpm_1c_r        = GesdiscProduct("GPM_L1C", "GPM_1CGPMGMI_R.05")
+
+opera_rainfall = OperaRadar("RAINFALL_RATE")
+opera_maximum_reflectivity = OperaRadar("MAXIMUM_REFLECTIVITY")
+opera_rainfall_accumulation = OperaRadar("HOURLY_RAINFAL_ACCUMULATION")

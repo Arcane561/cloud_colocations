@@ -11,9 +11,42 @@ from h5py import File
 
 from cloud_colocations.colocations import utils
 from cloud_colocations.colocations.products import file_cache, caliop, modis,\
-    modis_geo, cloudsat, dardar, gpm_2b_cmb, gpm_2a_gprofgmi, get_cache_path, gpm_1c_r
+    modis_geo, cloudsat, dardar, gpm_2b_cmb, gpm_2a_gprofgmi, get_cache_path,\
+    gpm_1c_r, opera_rainfall, opera_maximum_reflectivity
 
 from datetime import datetime
+from multiprocessing import Process
+
+def download_factory(cls, fname):
+    def f():
+        cls.product.download_file(fname)
+    return f
+
+class FileIterator:
+    def __init__(self, cls, files):
+        self.cls = cls
+        self.files = files
+        self.files.reverse()
+
+        self.process = Process(target = download_factory(self.cls, files[-1]))
+        self.process.start()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.process.join()
+
+        f = self.files.pop()
+
+        self.process = Process(target = download_factory(self.cls, self.files[-1]))
+        self.process.start()
+
+        cls = self.cls
+        return cls(cls.product.download_file(f))
+
+    def __repr__(self):
+        return "File iterator: " + str(self.files)
 
 ################################################################################
 # ProductFile
@@ -43,6 +76,27 @@ class ProductFile:
         filename = cls.product.get_file_by_date(t)
         path     = cls.product.download_file(filename)
         return cls(path)
+
+    @classmethod
+    def get_files_by_day(cls, t):
+        """
+        Return file with the latest start point earlier than the given
+        datetime :code:`t`.
+
+        Parameters:
+
+            t(datetime.datetime): :code:`datetime` object representing the point
+            in time for which to find the icare file.
+
+        Returns:
+
+            The file object with the latest found start time berfore the given
+            time.
+        """
+        d = int(t.strftime("%j"))
+        y = int(t.strftime("%Y"))
+        filenames = cls.product.get_files(y, d)
+        return FileIterator(cls, filenames)
 
     @classmethod
     def get_files_in_range(cls, t0, t1, t0_inclusive = False):
@@ -1190,3 +1244,152 @@ class GPM_2B_CMB(ProductFile):
         c  = self.lat.shape[1] // 2 - 1
         for i in range(dn, n - dn, dn):
             yield (i, c)
+
+class GPM_2A_GPROF(ProductFile):
+    """
+    GPM Level 2B combined data.
+
+    These files contain retrieved precipitation data from the combined
+    retrieval that combined the DPR with GMI observations at the
+    swath center.
+
+    In addition to simplified data access, this class defines the variables
+    that are extracted from found co-locations.
+
+    Attributes:
+
+        product: The corresponding product object (:code:`products.gpm_2b_cmb`)
+
+        dimensions: Dimensions of the co-located data to extract.
+
+        variables: Names and dimensions of the co-located variables variables
+            to extract.
+    """
+
+    product = gpm_2a_gprofgmi
+    name = "gpm_2a_gprofgmi"
+    dimensions = [("along_track", 49),
+                  ("across_track", 49)]
+    variables = [("rr", "f4", ("along_track", "across_track")),
+                 ("latitudes", "f4", ("along_track", "across_track")),
+                 ("longitudes", "f4", ("along_track", "across_track"))]
+
+    def __init__(self, file):
+        self.file_handle = File(file, "r")
+        g = self.file_handle['S1']
+        self.lat = g['Latitude'][:]
+        self.lon = g['Longitude'][:]
+        self.precip = g['surfacePrecipitation'][:]
+        self.precip_first_t = g['precip1stTertial'][:]
+        self.precip_third_t = g['precip3rdTertial'][:]
+        self.surface_type = g['surfaceTypeIndex'][:]
+
+    def _get_indices(self, i, j):
+        dn = 24
+        i_start = i - dn
+        i_end   = i + dn + 1
+        j_start = 0
+        j_end   = 49
+        return i_start, i_end, j_start, j_end
+
+    def get_latitudes(self, i, j):
+        """
+        Returns the latitudes of the NS swath of the file.
+        """
+        i_start, i_end, j_start, j_end = self._get_indices(i, j)
+        return self.lat[i_start : i_end, j_start : j_end]
+
+    def get_longitudes(self, i, j):
+        """
+        Returns the longitudes of the NS swath of the file.
+        """
+        i_start, i_end, j_start, j_end = self._get_indices(i, j)
+        return self.lon[i_start : i_end, j_start : j_end]
+
+    def get_colocation(self, lat, lon, d_max = 1.0, use_cache = True):
+        m, n = self.lat.shape
+        d = (self.lat - lat) ** 2 + (self.lon - lon) ** 2
+        ii = np.argmin(d.ravel())
+        i = ii // n 
+        j = ii % n
+
+        return (i, j), d[i, j]
+
+    def get_minimum_distance(self, lat, lon):
+        """
+        Get minimum distance of a given point from the center
+        of the swath.
+
+        Arguments:
+
+            lat: The latitude of the point to which to compute the distance.
+
+            lon: The longitude of the point to which to compute the distance
+        """
+        i_c = self.lat.shape[1] // 2
+        lats = self.lat[:, i_c]
+        lons = self.lon[:, i_c]
+        d = np.sqrt((lats - lat) ** 2 + (lons - lon) ** 2).min()
+        return d
+
+    def get_rr(self, i, j):
+        """
+        Get rain rates around a given co-location center.
+
+        Arguments:
+
+            i: Along-swath index of the co-location index.
+
+            j: Across-swath index of the co-location index.
+
+        """
+        dn = 24
+        i_start = i - dn
+        i_end   = i + dn + 1
+        j_start = j - dn - 1
+        j_end   = j + dn
+        return self.precip[i_start : i_end, :]
+
+    def get_colocation_centers(self):
+        """
+        Iterate over co-location centers in this file.
+        """
+        dn = 24
+        n  = self.lat.shape[0]
+        c  = self.lat.shape[1] // 2 - 1
+        for i in range(dn, n - dn, dn):
+            yield (i, c)
+
+class OperaRainfall(ProductFile):
+    """
+    """
+    product = opera_rainfall
+    name = "opera_rainfall"
+
+    def __init__(self, file):
+        self.file_handle = File(file, "r")
+        self.data = self.file_handle["dataset1"]["data1"]["data"][:]
+
+        from pyproj import Proj
+        self.projection = Proj(self.file_handle["where"].attrs["projdef"].decode())
+
+    @property
+    def mask(self):
+        return self.data > -9999000
+
+class OperaMaximumReflectivity(ProductFile):
+    """
+    """
+    product = opera_maximum_reflectivity
+    name = "opera_maximum_reflectivity"
+
+    def __init__(self, file):
+        self.file_handle = File(file, "r")
+        self.data = self.file_handle["dataset1"]["data1"]["data"][:]
+
+        from pyproj import Proj
+        self.projection = Proj(self.file_handle["where"].attrs["projdef"].decode())
+
+    @property
+    def mask(self):
+        return self.data > -9999000
