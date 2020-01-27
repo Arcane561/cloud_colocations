@@ -15,6 +15,7 @@ from cloud_colocations import settings
 from xml.etree import ElementTree
 import os, re, requests, shutil, tempfile
 import numpy as np
+import time
 
 def ensure_extension(path, ext):
     if not any([path[-len(e):] == e for e in ext]):
@@ -194,7 +195,11 @@ class DataProduct(metaclass = ABCMeta):
         else:
             return files[i + 1]
 
-    def get_files_in_range(self, t0, t1, t0_inclusive = False):
+    def get_files_in_range(self,
+                           t0,
+                           t1,
+                           t0_inclusive = False,
+                           t1_inclusive = False):
         """
         Get all files within time range.
 
@@ -241,11 +246,31 @@ class DataProduct(metaclass = ABCMeta):
 
             t += dt
 
-        if t0_inclusive:
+        # Make sure that we have a least one file even if none
+        # start within given range.
+        if len(files) < 1:
+            # Get current and following day.
+            y0 = t0.year
+            d0 = t0.timetuple().tm_yday
+            t = t + dt
+            y1 = t.year
+            d1 = t.timetuple().tm_yday
+
+            fs = self.get_files(y0, d0)
+            fs += self.get_files(y1, d1)
+
+            dts = [(self.name_to_date(f) - t0).total_seconds() for f in fs]
+            ind = np.argmin(np.abs(np.array(dts)))
+            files = [fs[ind]]
+
+        if t0_inclusive and not files == []:
             f_p = self.get_preceeding_file(files[0])
             files = [f_p] + files
 
-        if not pos1[-1] and not files == []:
+        if not files == [] and not pos1[-1]:
+            files += [self.get_following_file(files[-1])]
+
+        if t1_inclusive and not files == []:
             files += [self.get_following_file(files[-1])]
 
         return files
@@ -344,6 +369,7 @@ class GesdiscProduct(DataProduct):
         r = str(r.read())
 
         files = list(set(self.prog.findall(r)))
+        files.sort()
         return [f[1:-1] for f in files]
 
     def name_to_date(self, filename):
@@ -358,7 +384,6 @@ class GesdiscProduct(DataProduct):
         day  = "0" * (3 - len(day)) + day
 
         request_string = self._request_string.format(year = year, day = day, filename = filename)
-        print(request_string)
 
 
         r = requests.get(request_string)
@@ -470,11 +495,11 @@ class IcareProduct(DataProduct):
 ################################################################################
 
 class OperaRadar(DataProduct):
+    import cartopy.crs as ccrs
     """
     Base class for data products available from the ICARE ftp server.
     """
     base_url = "https://geoservices.meteofrance.fr/services"
-
     def __init__(self, product):
         """
         Create a new product instance.
@@ -505,11 +530,10 @@ class OperaRadar(DataProduct):
         request = request.format(product = self.product,
                                  time = time.strftime("%Y-%m-%dT%H:%M:%SZ"),
                                  token = self.token)
-        print(request)
         c.request("GET", request)
-        r = c.getresponse().read()
+        r = c.getresponse()
         with open(dest, 'wb') as f:
-            f.write(r)
+            f.write(r.read())
         return dest
 
     def download_file(self, filename):
@@ -530,6 +554,7 @@ class OperaRadar(DataProduct):
             filename = ensure_extension(filename, [".hdf", "HDF5"])
             dest     = os.path.join(file_cache.path, filename)
             self.download(date, dest)
+            time.sleep(5)
         return dest
 
     def get_files(self, year, day):

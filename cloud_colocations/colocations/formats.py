@@ -37,13 +37,20 @@ class FileIterator:
     def __next__(self):
         self.process.join()
 
-        f = self.files.pop()
+        try:
+            f = self.files.pop()
+        except:
+            raise StopIteration
 
-        self.process = Process(target = download_factory(self.cls, self.files[-1]))
-        self.process.start()
+        if len(self.files) > 0:
+            self.process = Process(target = download_factory(self.cls, self.files[-1]))
+            self.process.start()
 
         cls = self.cls
         return cls(cls.product.download_file(f))
+
+    def __len__(self):
+        return len(self.files)
 
     def __repr__(self):
         return "File iterator: " + str(self.files)
@@ -99,7 +106,11 @@ class ProductFile:
         return FileIterator(cls, filenames)
 
     @classmethod
-    def get_files_in_range(cls, t0, t1, t0_inclusive = False):
+    def get_files_in_range(cls,
+                           t0,
+                           t1,
+                           t0_inclusive = False,
+                           t1_inclusive = False):
         """
         Get files within time range.
 
@@ -108,10 +119,14 @@ class ProductFile:
             t0(datetime.datetime): :code:`date`
 
         """
-        filenames = cls.product.get_files_in_range(t0, t1, t0_inclusive)
+        filenames = cls.product.get_files_in_range(t0,
+                                                   t1,
+                                                   t0_inclusive,
+                                                   t1_inclusive)
         objs = []
         for f in filenames:
             path = cls.product.download_file(f)
+            print(path)
             objs += [cls(path)]
         return objs
 
@@ -1250,7 +1265,7 @@ class GPM_2A_GPROF(ProductFile):
     GPM Level 2B combined data.
 
     These files contain retrieved precipitation data from the combined
-    retrieval that combined the DPR with GMI observations at the
+    retrieval that combines the DPR with GMI observations at the
     swath center.
 
     In addition to simplified data access, this class defines the variables
@@ -1281,8 +1296,18 @@ class GPM_2A_GPROF(ProductFile):
         self.lon = g['Longitude'][:]
         self.precip = g['surfacePrecipitation'][:]
         self.precip_first_t = g['precip1stTertial'][:]
-        self.precip_third_t = g['precip3rdTertial'][:]
-        self.surface_type = g['surfaceTypeIndex'][:]
+        self.precip_third_t = g['precip2ndTertial'][:]
+        self.st_index = g['surfaceTypeIndex'][:]
+        self.tcwv_index = g['totalColumnWaterVaporIndex'][:]
+        self.t2m_index = g["temp2mIndex"][:]
+
+        st = self.start_time
+        n = self.lat.shape[0]
+        dts = np.zeros(n)
+        for i in range(n):
+            dts[i] = (self.get_time(i) - st).seconds
+        self.time = np.broadcast_to(dts.reshape(-1, 1), self.lat.shape)
+
 
     def _get_indices(self, i, j):
         dn = 24
@@ -1291,6 +1316,27 @@ class GPM_2A_GPROF(ProductFile):
         j_start = 0
         j_end   = 49
         return i_start, i_end, j_start, j_end
+
+    def get_time(self, i):
+        g = self.file_handle["S1"]["ScanTime"]
+        y = g["Year"][i]
+        m = g["Month"][i]
+        d = g["DayOfMonth"][i]
+        h = g["Hour"][i]
+        mn = g["Minute"][i]
+        s = g["Second"][i]
+        return datetime(y, m, d, h, mn, s)
+
+    @property
+    def start_time(self):
+        return self.get_time(0)
+
+    @property
+    def end_time(self):
+        return self.get_time(-1)
+    @property
+    def end_time(self):
+        return self.get_time(-1)
 
     def get_latitudes(self, i, j):
         """
@@ -1367,15 +1413,81 @@ class OperaRainfall(ProductFile):
     name = "opera_rainfall"
 
     def __init__(self, file):
-        self.file_handle = File(file, "r")
-        self.data = self.file_handle["dataset1"]["data1"]["data"][:]
 
+        try:
+            self.file_handle = File(file, "r")
+            self.valid = True
+        except:
+            self.valid = False
+            return None
+
+        self.data = self.file_handle["dataset1"]["data1"]["data"][:]
         from pyproj import Proj
         self.projection = Proj(self.file_handle["where"].attrs["projdef"].decode())
+        self.x_size = np.float(self.file_handle["where"].attrs["xsize"])
+        self.x_scale = np.float(self.file_handle["where"].attrs["xscale"])
+        self.y_size = np.float(self.file_handle["where"].attrs["ysize"])
+        self.y_scale = np.float(self.file_handle["where"].attrs["yscale"])
+
+        ll_lon = np.float(self.file_handle["where"].attrs["LL_lon"])
+        ll_lat = np.float(self.file_handle["where"].attrs["LL_lat"])
+
+        x0, y0 = self.projection(ll_lon, ll_lat)
+        self.x = x0 + np.arange(self.x_size) * self.x_scale
+        self.y = y0 + np.arange(self.y_size)[::-1] * self.y_scale
 
     @property
     def mask(self):
         return self.data > -9999000
+
+    @property
+    def start_time(self):
+        ts = self.file_handle["dataset1"]["what"].attrs["startdate"].decode()
+        ts += self.file_handle["dataset1"]["what"].attrs["starttime"].decode()
+        return datetime.strptime(ts, "%Y%m%d%H%M%S")
+
+    @property
+    def end_time(self):
+        ts = self.file_handle["dataset1"]["what"].attrs["enddate"].decode()
+        ts += self.file_handle["dataset1"]["what"].attrs["endtime"].decode()
+        return datetime.strptime(ts, "%Y%m%d%H%M%S")
+
+    @property
+    def mean_time(self):
+        ts = self.start_time
+        te = self.end_time
+        dt = te - ts
+        return ts + 0.5 * dt
+
+    def get_smoothed_data(self, d):
+
+        # Calculate convolution kernel
+        x_scale = self.x_scale
+        y_scale = self.y_scale
+
+        m = int(np.trunc((2 * d) / y_scale))
+        if m % 2 == 0:
+            m = m+1
+
+        n = int(np.trunc((2 * d) / x_scale))
+        if n % 2 == 0:
+            n = n+1
+
+        y = np.linspace(- (m // 2), (m // 2), m) * y_scale
+        x = np.linspace(- (n // 2), (n // 2), n) * x_scale
+        r2 = x.reshape(1, -1) ** 2 + y.reshape(-1, 1) ** 2
+        sigma = d / 2.355
+        k = np.exp(- 0.5 * r2 / sigma ** 2)
+        k /= k.sum()
+
+        # Smooth data
+        data = np.copy(self.data)
+        data[np.logical_not(self.mask)] = np.nan
+        data = sp.signal.convolve(data, k, "same", "direct")
+
+        return data, k
+
+
 
 class OperaMaximumReflectivity(ProductFile):
     """
